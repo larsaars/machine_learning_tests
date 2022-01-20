@@ -1,2 +1,2 @@
-# machine_learning_tests
+# mMachine Learning Tests
 Testing out machine learning stuff.
