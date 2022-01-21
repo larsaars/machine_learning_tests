@@ -1,2 +1,2 @@
-# mMachine Learning Tests
-Testing out machine learning stuff.
+# Machine Learning Tests
+Testing out machine learning and optimization stuff.
