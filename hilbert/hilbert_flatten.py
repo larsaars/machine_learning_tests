@@ -8,7 +8,7 @@ and an module (layer) for pytorch.
 import time
 
 import numpy as np
-from hilbert import decode
+from hilbert import decode, encode
 
 from torch import nn
 import torch
@@ -18,13 +18,20 @@ import torch
 def hilbert_flatten(array: np.ndarray) -> np.ndarray:
     D = array.ndim
     S = np.arange(np.array(array.shape).prod())
-    L = decode(S, D, 8).T.tolist()
+    L = decode(S, D, 8)
+    return array[tuple(L.T)]
 
-    return array[tuple(L)]
+
+"takes 1-darray and expands it in n dims"
+def hilbert_expand(array: np.ndarray, dim) -> np.ndarray:
+    array = array.flatten()
+
+    S = np.arange(len(array))
+    L = decode(S, dim, 8)
 
 
 class HilbertFlatten(nn.Module):
-    def __init__(self, ):
+    def __init__(self):
         super(HilbertFlatten, self).__init__()
 
     
@@ -44,6 +51,9 @@ if __name__ == '__main__':
                   [4, 7, 6, 8]])
 
     f = hilbert_flatten(a)
+    g = hilbert_expand(f)
 
-    print(f'Operation took {time.time() - start}ns.')
+    print(f'Operations took {(time.time() - start) * 1000}ms.')
+
     print(f)
+    print(g)
