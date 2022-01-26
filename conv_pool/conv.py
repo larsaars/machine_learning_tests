@@ -168,3 +168,15 @@ def pool1(X, k=2, s=1, action=np.max):
             
     return O
 
+
+def augment_array(X: np.ndarray, n=2, axis=-1):
+    '''
+    X multidimensional array
+    n scaling factor
+    axis the axis to repeat
+
+    Scale image by factor n, at last axis
+    '''
+
+    return X.repeat(n, axis=axis)
+

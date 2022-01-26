@@ -8,19 +8,22 @@ from skimage import color
 from skimage import io
 
 
-def plt_im(X):
-    '''Plots grayscale image X.'''
+def plt_im(X, g=True):
+    '''Plots grayscale image X (or colored)'''
 
     plt.figure(figsize=(36, 21))
-    plt.imshow(X, cmap='gray')
+    if g:
+        plt.imshow(X, cmap='gray')
+    else:
+        plt.imshow(X)
     plt.xticks(())
     plt.yticks(())
     plt.show()
 
 
-def read_im(path):
-    '''reads grayscale image'''
+def read_im(path, g=True):
+    '''reads grayscale image (or colored)'''
     img = io.imread(path)
-    img = color.rgb2gray(img)
+    if g: img = color.rgb2gray(img)
     return img
 
