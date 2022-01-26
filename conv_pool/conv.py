@@ -119,7 +119,9 @@ def pad1(X, p=0):
     1d padding with zeros
     '''
 
-    Z = np.zeros(2*p + X.shape[0])
+    w = X.shape[0]
+
+    Z = np.zeros(2*p + w)
     Z[p:w+p] = X
 
     return Z

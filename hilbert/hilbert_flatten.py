@@ -14,16 +14,23 @@ from torch import nn
 import torch
 
 
-"takes ndarray and does not change overall length, but array will be flattened with an hilbert curve"
 def hilbert_flatten(array: np.ndarray, byte_size=8) -> np.ndarray:
+    '''
+    takes ndarray and does not change overall length, but array will be flattened with an hilbert curve
+    '''
+
     D = array.ndim
     S = np.arange(np.array(array.shape).prod())
     L = decode(S, D, byte_size)
+
     return array[tuple(L.T)]
 
 
-"takes 1-darray and expands it in n dims"
 def hilbert_expand(array: np.ndarray, dim=2, byte_size=8) -> np.ndarray:
+    '''
+    takes 1-darray and expands it in n dims
+    '''
+
     array = array.flatten()
     a_len = array.shape[0]
 
@@ -36,8 +43,11 @@ def hilbert_expand(array: np.ndarray, dim=2, byte_size=8) -> np.ndarray:
     return O
 
 
-"remaps an n-dimensional array to m dimensions"
-def hilbert_remap(array: np.ndarray, )
+def hilbert_remap(array: np.ndarray, out_dim=1, p=0):
+    ''' 
+    remaps an n-dimensional array to m dimensions
+    '''
+    pass
 
 
 
