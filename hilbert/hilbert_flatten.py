@@ -23,11 +23,17 @@ def hilbert_flatten(array: np.ndarray) -> np.ndarray:
 
 
 "takes 1-darray and expands it in n dims"
-def hilbert_expand(array: np.ndarray, dim) -> np.ndarray:
+def hilbert_expand(array: np.ndarray, dim: int) -> np.ndarray:
     array = array.flatten()
+    a_len = array.shape[0]
 
-    S = np.arange(len(array))
+    S = np.arange(a_len)
     L = decode(S, dim, 8)
+
+    O = np.zeros(dim * tuple([int(a_len**(1 / dim))]))
+    O[tuple(L.T)] = array[S]
+
+    return O
 
 
 class HilbertFlatten(nn.Module):
@@ -51,7 +57,7 @@ if __name__ == '__main__':
                   [4, 7, 6, 8]])
 
     f = hilbert_flatten(a)
-    g = hilbert_expand(f)
+    g = hilbert_expand(f, 2)
 
     print(f'Operations took {(time.time() - start) * 1000}ms.')
 
