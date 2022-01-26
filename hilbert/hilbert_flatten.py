@@ -36,6 +36,11 @@ def hilbert_expand(array: np.ndarray, dim=2, byte_size=8) -> np.ndarray:
     return O
 
 
+"remaps an n-dimensional array to m dimensions"
+def hilbert_remap(array: np.ndarray, )
+
+
+
 class HilbertFlatten(nn.Module):
     def __init__(self):
         super(HilbertFlatten, self).__init__()
