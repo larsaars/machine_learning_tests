@@ -15,20 +15,20 @@ import torch
 
 
 "takes ndarray and does not change overall length, but array will be flattened with an hilbert curve"
-def hilbert_flatten(array: np.ndarray) -> np.ndarray:
+def hilbert_flatten(array: np.ndarray, byte_size=8) -> np.ndarray:
     D = array.ndim
     S = np.arange(np.array(array.shape).prod())
-    L = decode(S, D, 8)
+    L = decode(S, D, byte_size)
     return array[tuple(L.T)]
 
 
 "takes 1-darray and expands it in n dims"
-def hilbert_expand(array: np.ndarray, dim: int) -> np.ndarray:
+def hilbert_expand(array: np.ndarray, dim=2, byte_size=8) -> np.ndarray:
     array = array.flatten()
     a_len = array.shape[0]
 
     S = np.arange(a_len)
-    L = decode(S, dim, 8)
+    L = decode(S, dim, byte_size)
 
     O = np.zeros(dim * tuple([int(a_len**(1 / dim))]))
     O[tuple(L.T)] = array[S]
