@@ -109,6 +109,8 @@ def hilbert_auto_adjust_size(X: np.ndarray, dim=2):
     adjust size of 1d array X to match the next hilbert size
     '''
 
+    X = X.flatten()
+
     # length of X
     L = X.shape[0]
     # next fit
@@ -120,7 +122,7 @@ def hilbert_auto_adjust_size(X: np.ndarray, dim=2):
 
     # augment to X to next fit
     # first try by repeating
-    scalar = L / N
+    scalar = np.floor(N / L)
     X = np.repeat(X, scalar, axis=-1)
     L = L * scalar
 
@@ -129,7 +131,7 @@ def hilbert_auto_adjust_size(X: np.ndarray, dim=2):
         return X
 
     # else, augment by padding with N-L zeros
-    padding = int(np.floor((N - L) / 2))
+    padding = int(np.ceil((N - L) / 2))
     X = pad1(X, padding)
     L += 2 * padding
 
