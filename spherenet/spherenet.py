@@ -1,38 +1,179 @@
 #!/usr/bin/env python3
 
-import pandas as pd
 import numpy as np
-import tqdm as tqdm
 from numba_progress import ProgressBar
 import numba as nb
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, Normalizer
 import pickle
 
 
 class SphereNet:
-    def __init__(self, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, max_spheres_used=-1):
+    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, max_spheres_used=-1, metric='minkowski', p=2, optimize=True, standard_scaling=False, normalization=False, verbosity=0):
         """
         Initialize the SphereNet model
+        
+        :param in_class: the class that will be classified as True or inside the spheres
         :param min_dist_scaler: The minimum distance between spheres
-        :param min_radius_threshold: The minimum radius of a sphere
+        :param min_radius_threshold: The minimum radius of a sphere (if is -1, there is none)
         :param optimization_tolerance: The optimization tolerance (higher = more optimization but less performance)
         :param max_spheres_used: The maximum number of spheres used for classification (-1 = no limit)
+        :param metric: The distance metric to be used. Available: ['minkowski', 'hamming', 'max', 'min']
+        :param p: the p hyperparam (order of magnitude) when using the minkowski distance (p=1 is manhattan, p=2 is euclid)
+        :param optimize: if optimization should be activated
+        :param standard_scaling: if should use standard scaling
+        :param normalization: if should use normalization
+        :param verbosity: The verbosity level (between 0 and 2)
         """
-
+        
+        # assign args to self
+        self.in_class = in_class
         self.min_dist_scaler = min_dist_scaler
         self.min_radius_threshold = min_radius_threshold
         self.optimization_tolerance = optimization_tolerance
         self.max_spheres_used = max_spheres_used
+        self.verbosity = verbosity
+        self.optimize = optimize
+        self.standard_scaling = standard_scaling
+        self.normalization = normalization
+        self.metric = metric
+        self.p = p
+        
+        # assign metric function
+        if metric == 'minkowski':
+            self._metric = self._metric_minkowski
+        elif metric == 'euclid':
+            self._metric = self._metric_minkowski
+            self.p = 2
+        elif metric == 'manhattan':
+            self._metric = self._metric_minkowski
+            self.p = 1
+        elif metric == 'hamming':
+            self._metric = self._metric_hamming
+        elif metric == 'max' or metric == 'chebyshev':
+            self._metric = self._metric_max
+        elif metric == 'min':
+            self._metric = self._metric_min
+        elif metric == 'cosine':
+            self._metric = self._metric_cosine
+        elif metric == 'jaccard':
+            self._metric = self._metric_jaccard
+        elif metric == 'dice':
+            self._metric = self._metric_dice
+        elif metric == 'canberra':
+            self._metric = self._metric_canberra
+        elif metric == 'braycurtis':
+            self._metric = self._metric_braycurtis
+        elif metric == 'correlation':
+            self._metric = self._metric_correlation
+        elif metric == 'yule':
+            self._metric = self._metric_yule
+        elif metric == 'havensine':
+            self._metric = self._metric_havensine
+        elif metric == 'sum':
+            self._metric = self._metric_sum
+        elif metric == 'mean':
+            self._metric = self._metric_mean
+        elif metric == 'median':
+            self._metric = self._metric_median
+        elif metric == 'std':
+            self._metric = self._metric_std
 
-        self.scaler = StandardScaler()
+ 
+        # init scaler(s)
+        if standard_scaling:
+            self.standard_scaler = StandardScaler()
+        if normalization:
+            self.normalizer = Normalizer()
+
 
 
     @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_std(x1, x2, p) -> np.float64:
+        return np.std(x1 - x2)
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_mean(x1, x2, p) -> np.float64:
+        return np.mean(x1 - x2)
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_median(x1, x2, p) -> np.float64:
+        return np.median(x1 - x2)
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_minkowski(x1, x2, p) -> np.float64:
+        return np.sum((x1 - x2) ** p) ** (1. / p)
+    
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_hamming(x1, x2, p) -> np.float64:
+        return np.sum(np.abs(x1 - x2)) / x1.shape[0]
+    
+ 
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_min(x1, x2, p) -> np.float64:
+        return np.min(np.abs(x1 - x2))
+     
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_max(x1, x2, p) -> np.float64:
+        return np.max(np.abs(x1 - x2))
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_cosine(x1, x2, p) -> np.float64:
+        return 1 - np.sum(x1 * x2) / (np.sqrt(np.sum(x1 ** 2)) * np.sqrt(np.sum(x2 ** 2)) + 1e-8)
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_jaccard(x1, x2, p) -> np.float64:
+        return 1 - np.sum(np.minimum(x1, x2)) / (np.sum(np.maximum(x1, x2)) + 1e-8)
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_dice(x1, x2, p) -> np.float64:
+        return 1 - 2 * np.sum(np.minimum(x1, x2)) / (np.sum(x1) + np.sum(x2) + 1e-8)
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_canberra(x1, x2, p) -> np.float64:
+        return np.sum(np.abs(x1 - x2) / (np.abs(x1) + np.abs(x2) + 1e-8))
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_braycurtis(x1, x2, p) -> np.float64:
+        return np.sum(np.abs(x1 - x2)) / (np.sum(np.abs(x1 + x2)) + 1e-8)
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_correlation(x1, x2, p) -> np.float64:
+        return 1 - np.corrcoef(x1, x2)[0, 1]
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_yule(x1, x2, p) -> np.float64:
+        return np.sum(x1 * x2) / (np.sum(np.abs(x1 - x2)) + 1e-8)
+    
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_havensine(x1, x2, p) -> np.float64:
+        return np.arccos(np.sum(x1 * x2) / (np.sqrt(np.sum(x1 ** 2)) * np.sqrt(np.sum(x2 ** 2)) + 1e-8)) / np.pi
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _metric_sum(x1, x2, p) -> np.float64:
+        return np.sum(np.abs(x1 - x2))
+
+    
+    @staticmethod
     @nb.njit(parallel=True, fastmath=True)
-    def _calculate_spheres(X_IN, X_OUT, progress, min_dist_scaler, min_radius_threshold):
+    def _calculate_spheres(X_IN, X_OUT, progress, min_dist_scaler, min_radius_threshold, metric, p):
         """
         determine n spheres center and their single sphere performance
-
         :param X_IN: the inside points
         :param X_OUT: the outside points
         :param progress: the progress bar
@@ -40,33 +181,38 @@ class SphereNet:
         """
         
         # arrays have quadratic size 
-        length = X_IN.shape[0]
+        length_in, length_out = X_IN.shape[0], X_OUT.shape[0]
         # create arrays to be returned
-        perf = np.full((length, length), False) 
-        radii = np.zeros(length, dtype=np.float32)
-        centers = np.zeros((length, X_IN.shape[1]))
+        perf = np.full((length_in, length_in), False) 
+        radii = np.zeros(length_in, dtype=np.float64)
+        centers = np.zeros((length_in, X_IN.shape[1]), dtype=np.float64)
         
         # rows to be used (not filtered by threshold)
-        rows = np.full(length, True, dtype=np.bool_)
+        rows = np.full(length_in, True, dtype=np.bool_)
 
-        for i in nb.prange(length):
+        for i in nb.prange(length_in):
             # update progress
             if progress is not None:
                 progress.update(1)
             
             # calculate the distance to the nearest outer point
-            radius = min_dist_scaler * np.min(
-                np.sqrt(np.sum((X_IN[i] - X_OUT) ** 2., axis=1))
-            )
-
+            # since is 2d array perform on loop
+            dist = np.zeros(length_out, dtype=np.float64)
+            for j in range(length_out):
+                dist[j] = metric(X_IN[i], X_OUT[j], p)
+            # scale and get min from dist array
+            radius = min_dist_scaler * np.min(dist)
+             
             # only add if radius is larger than threshold
-            if radius > min_radius_threshold:
+            if min_radius_threshold == -1 or radius > min_radius_threshold:
                 radii[i] = radius
                 centers[i] = X_IN[i]
-
+                 
                 # calculate performance (how many of the IN points are classified as in by just this one N-sphere)
                 # distances < radius of this sphere
-                perf[i] = np.sqrt(np.sum((centers[i] - X_IN) ** 2., axis=1)) < radius 
+                # since is 2d array perform on loop, set each index directly
+                for j in range(length_in):
+                    perf[i, j] = metric(X_IN[i], X_IN[j], p) < radius
             else:
                 rows[i] = False
          
@@ -78,7 +224,6 @@ class SphereNet:
     def _remove_ambiguity(perf, radii, centers, progress, optimization_tolerance):
         """
         Remove ambiguity / optimize the spheres by removing overlapping sphere results.
-
         :param perf: the performance of the spheres
         :param radii: the radii of the spheres
         :param centers: the centers of the spheres
@@ -193,45 +338,52 @@ class SphereNet:
         # get centers and radii actually useable for classication
         cl_centers = centers_lts[rows]
         cl_radii = radii_lts[rows]
-
         return cl_centers, cl_radii
 
 
-    def fit(self, X, y, in_class=0, verbosity=0, optimize=True):
+    def fit(self, X, y):
         """
         Fit the SphereNet model to the data
         :param X: The input data
-        :param y: The target data (0 outside, 1 inside)
-        :param verbosity: The verbosity level
+        :param y: The target data 
         :return: The fitted model (self)
         """
-        # fit scaler
-        self.scaler.fit_transform(X)
-
-
+        # fit scaler and transform X data in same step
+        if self.standard_scaling:
+            if self.verbosity > 1:
+                print('fitting standard scaler')
+                
+            X = self.standard_scaler.fit_transform(X)
+            
+        if self.normalization:
+            if self.verbosity > 1:
+                print('fitting normalizer')
+                
+            X = self.normalizer.fit_transform(X)
+ 
         # get in X_IN and X_OUT points
-        X_IN = X[y == in_class]
-        X_OUT = X[y != in_class]
+        X_IN = X[y == self.in_class]
+        X_OUT = X[y != self.in_class]
 
-        if verbosity > 1:
+        if self.verbosity > 1:
             print("X_IN.shape:", X_IN.shape)
             print("X_OUT.shape:", X_OUT.shape)
             
             print('Calculating radii and centers...')
 
         # calculate the spheres and their performance
-        if verbosity > 0:
+        if self.verbosity > 0:
             with ProgressBar(total=X_IN.shape[0]) as progress:
-                perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold)
+                perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
         else:
-            perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, None, self.min_dist_scaler, self.min_radius_threshold)
+            perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, None, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
 
-        if verbosity > 1: 
+        if self.verbosity > 1: 
             print("Removing ambiguity...")
 
         # remove ambiguity / optimize the spheres
-        if optimize:
-            if verbosity > 0:
+        if self.optimize:
+            if self.verbosity > 0:
                 with ProgressBar(total=perf.shape[0]) as progress:
                     self.cl_centers, self.cl_radii = self._remove_ambiguity(perf, radii, centers, progress, self.optimization_tolerance)
             else:
@@ -241,7 +393,8 @@ class SphereNet:
 
 
         # use only max amount of spheres
-        self.cl_centers, self.cl_radii = self.cl_centers[:self.max_spheres_used], self.cl_radii[:self.max_spheres_used]
+        if self.max_spheres_used != -1:
+            self.cl_centers, self.cl_radii = self.cl_centers[:self.max_spheres_used], self.cl_radii[:self.max_spheres_used]
 
         
         return self
@@ -249,20 +402,18 @@ class SphereNet:
 
     @staticmethod
     @nb.njit(parallel=True, fastmath=True)
-    def _predict(X, cl_centers, cl_radii):
+    def _predict(X, cl_centers, cl_radii, metric, p):
         """
         Predict the class of the data.
-
         :param X: The input
-        :return: The predicted class
+        :return: If is inside class as bool
         """
-
-
+ 
         y = np.full(X.shape[0], False, dtype=np.bool_)
 
         for i in nb.prange(X.shape[0]):
             for j in range(cl_centers.shape[0]):
-                if np.sqrt(np.sum((cl_centers[j] - X[i]) ** 2.)) < cl_radii[j]:
+                if metric(cl_centers[j], X[i], p) < cl_radii[j]:
                     y[i] = True
                     break
 
@@ -274,10 +425,15 @@ class SphereNet:
         :param X: The input
         :return: The predicted class
         """
-        # transform X
-        X = self.scaler.transform(X)
+        # transform X as defined
+        if self.standard_scaling:
+            X = self.standard_scaler.transform(X)
+            
+        if self.normalization:
+            X = self.normalizer.transform(X)
+            
         # use _predict numba method
-        return self._predict(X, self.cl_centers, self.cl_radii)
+        return self._predict(X, self.cl_centers, self.cl_radii, self._metric, self.p)
 
     def score(self, X, y):
         """
@@ -295,7 +451,6 @@ class SphereNet:
     def dump(self, file):
         """
         dump classifier as file
-
         :param file: file to dump to
         """
         with open(file, "wb", protocol=4) as f:
@@ -305,7 +460,6 @@ class SphereNet:
     def load(self, file):
         """
         load classifier from file
-
         :param file: file to load from
         """
         with open(file, "rb") as f:
