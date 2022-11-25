@@ -6,8 +6,15 @@ import numba as nb
 from sklearn.preprocessing import StandardScaler, Normalizer
 import pickle
 
+# GLOBAL VARS
+metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum']
 
+
+# CLASSIFICATION CLASSES
 class SphereNet:
+    """
+    SphereNet for one inside classification
+    """
 
     
     def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, max_spheres_used=-1, metric='euclid', p=2, optimize=True, standard_scaling=False, normalization=False, verbosity=0):
@@ -22,8 +29,8 @@ class SphereNet:
         :param metric: The distance metric to be used. Available: ['minkowski', 'hamming', 'max', 'min']
         :param p: the p hyperparam (order of magnitude) when using the minkowski distance (p=1 is manhattan, p=2 is euclid)
         :param optimize: if optimization should be activated
-        :param standard_scaling: if should use standard scaling
-        :param normalization: if should use normalization
+        :param standard_scaling: if should use standard scaling. Can also be a StandardScaler object
+        :param normalization: if should use normalization. Can also be a Normalizer object
         :param verbosity: The verbosity level (between 0 and 2)
         """
         
@@ -35,18 +42,25 @@ class SphereNet:
         self.max_spheres_used = max_spheres_used
         self.verbosity = verbosity
         self.optimize = optimize
-        self.standard_scaling = standard_scaling
-        self.normalization = normalization
+        self.standard_scaling = bool(standard_scaling)  # bools because can also be the scaler objects
+        self.normalization = bool(normalization)  # see above
         self.metric = metric
         self.p = p
         # set metric index
-        self._metric = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum'].index(metric)
+        self._metric = metrics_available.index(metric)
  
-        # init scaler(s)
+        # init scaler(s), if classes passed, set those as scalers
         if standard_scaling:
-            self.standard_scaler = StandardScaler()
+            if isinstance(standard_scaling, StandardScaler):
+                self.standard_scaler = standard_scaling
+            else:
+                self.standard_scaler = StandardScaler()
+
         if normalization:
-            self.normalizer = Normalizer()
+            if isinstance(normalization, Normalizer):
+                self.normalizer = normalization
+            else:
+                self.normalizer = Normalizer()
   
         
  
@@ -69,7 +83,6 @@ class SphereNet:
 
         # rows to be used (not filtered by threshold)
         rows = np.full(length_in, True, dtype=np.bool_)
-
         for i in nb.prange(length_in):
             # update progress
             if progress is not None:
@@ -284,9 +297,7 @@ class SphereNet:
         rows = ~rows
 
         # get centers and radii actually useable for classication
-        cl_centers = centers_lts[rows]
-        cl_radii = radii_lts[rows]
-        return cl_centers, cl_radii
+        return centers_lts[rows], radii_lts[rows]
  
     
     def fit(self, X, y):
@@ -296,18 +307,24 @@ class SphereNet:
         :param y: The target data 
         :return: The fitted model (self)
         """
+
+        if self.verbosity > 1:
+            print(f'Fitting SphereNet model for in_class {self.in_class}')
+
         # fit scaler and transform X data in same step
         if self.standard_scaling:
             if self.verbosity > 1:
                 print('fitting standard scaler')
                 
-            X = self.standard_scaler.fit_transform(X)
+            # if is not fitted yet, fit
+            if not self._scaler_fitted:
+                X = self.standard_scaler.fit_transform(X)
             
         if self.normalization:
             if self.verbosity > 1:
-                print('fitting normalizer')
+                print('transforming with normalizer')
                 
-            X = self.normalizer.fit_transform(X)
+            X = self.normalizer.transform(X)
  
         # get in X_IN and X_OUT points
         X_IN = X[y == self.in_class]
@@ -322,11 +339,9 @@ class SphereNet:
         # calculate the spheres and their performance
         if self.verbosity > 0:
             with ProgressBar(total=X_IN.shape[0]) as progress:
-                # perf, radii, centers = self.__calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
                 perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
         else:
-            pass
-            # perf, radii, centers = self.__calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric_calc_2, self._metric, self.p)
+            perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, None, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
 
         if self.verbosity > 1: 
             print("Removing ambiguity...")
@@ -459,3 +474,150 @@ class SphereNet:
             self = pickle.load(f)
 
         return self
+
+    def __repr__(self):
+        return f"SphereNet(metric={self.metric}, in_class={self.in_class}, standard_scaling={self.standard_scaling}, normalization={self.normalization})"
+
+    def __str__(self):
+        return self.__repr__()
+
+
+
+
+class MultiSphereNet:
+    """
+    MultiSphereNet for multi class classification
+    Init with a list of SphereNet classifiers and shares normalizers and standard scalers
+    """
+    
+    def __init__(self, standard_scaling=False, normalization=False, **kwargs):
+        """
+        MultiSphereNet
+
+        :param kwargs: see SphereNet
+        """
+
+        self.standard_scaling = bool(standard_scaling)
+        self.normalization = bool(normalization)
+        self.kwargs = kwargs
+        self.sphere_nets = []
+
+
+        # init standard scaler and normalizer if needed
+        if standard_scaling:
+            if isinstance(standard_scaling, StandardScaler):
+                self.standard_scaler = standard_scaling
+            else:
+                self.standard_scaler = StandardScaler()
+        else:
+            self.standard_scaler = None
+
+        if normalization:
+            if isinstance(normalization, Normalizer):
+                self.normalizer = normalization
+            else:
+                self.normalizer = Normalizer()
+        else:
+            self.normalizer = None
+
+
+    def fit(self, X, y):
+        """
+        Fit the model
+        :param X: The input data
+        :param y: The target data
+        :return: self
+        """
+
+        assert X.shape[0] == y.shape[0]
+
+        # fit standard scaler if needed and transform X
+        if self.standard_scaling:
+            if not hasattr(self.standard_scaler, 'n_features_in_'):
+                self.standard_scaler.fit(X)
+
+            X = self.standard_scaler.transform(X)
+
+        # transform via normalizer if needed
+        if self.normalization:
+            X = self.normalizer.transform(X)
+
+        # get unique classes
+        self.classes = np.unique(y)
+        
+        # fit one SphereNet for each class
+        for cl in self.classes:
+            net = SphereNet(in_class=cl, standard_scaling=False, normalization=False, **self.kwargs)
+            net.fit(X, y)
+            self.sphere_nets.append(net)
+
+        return self
+
+    def predict(self, X):
+        """
+        Predict the class of the data and scale data before.
+        :param X: The input
+        :return: The predicted class (array), -1 if no class was found
+        """
+        # transform X as defined
+        if self.standard_scaling:
+            X = self.standard_scaler.transform(X)
+            
+        if self.normalization:
+            X = self.normalizer.transform(X)
+            
+        # create a array filled with -1
+        y = np.full(X.shape[0], -1, dtype=np.int8)
+
+        # predict for each SphereNet
+        for net in self.sphere_nets:
+            y[net.predict(X)] = net.in_class  # set class if SphereNet predicts True for the data point
+
+        return y
+
+    def score(self, X, y):
+        """
+        Score the model
+        :param X: The input data
+        :param y: The target data
+        :return: The accuracy
+        """
+
+        assert X.shape[0] == y.shape[0]
+
+        return (self.predict(X) == y).sum() / y.shape[0]
+    
+    def dump(self, file):
+        """
+        dump classifier as file
+        :param file: file to dump to
+        """
+        with open(file, "wb", protocol=4) as f:
+            pickle.dump(self, f)
+
+    def load(self, file):
+        """
+        load classifier from file
+        :param file: file to load from
+        """
+        with open(file, "rb") as f:
+            self = pickle.load(f)
+
+        return self
+    
+    def __repr__(self):
+        return f"MultiSphereNet with {len(self.sphere_nets)} SphereNets"
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __len__(self):
+        return len(self.sphere_nets)
+
+    def __getitem__(self, item):
+        return self.sphere_nets[item]
+
+    def __iter__(self):
+        return iter(self.sphere_nets)
+
+
