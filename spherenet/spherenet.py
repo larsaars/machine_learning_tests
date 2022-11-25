@@ -317,7 +317,7 @@ class SphereNet:
                 print('fitting standard scaler')
                 
             # if is not fitted yet, fit
-            if not self._scaler_fitted:
+            if not hasattr(self.standard_scaler, 'n_features_in_'):
                 X = self.standard_scaler.fit_transform(X)
             
         if self.normalization:
