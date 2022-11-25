@@ -372,7 +372,7 @@ class SphereNet:
     
     @staticmethod
     @nb.njit(parallel=True, fastmath=True)
-    def _predict(X, cl_centers, cl_radii, _metric, p):
+    def _predict(X, cl_centers, cl_radii, _metric, p, progress):
         """
         Predict the class of the data.
         :param X: The input
@@ -385,6 +385,10 @@ class SphereNet:
 
         # loop through all rows
         for i in nb.prange(X.shape[0]):
+            # update progress
+            if progress is not None:
+                progress.update(1)
+            
             # loop till one classifier is true
             for j in range(cl_centers.shape[0]):
                 # WHY THIS MESSY CODE (UGLY WORKAROUND) AND NOT JUST A METRIC FUNCTION POINTER?
@@ -439,10 +443,14 @@ class SphereNet:
             
         if self.normalization:
             X = self.normalizer.transform(X)
-            
+         
         # use _predict numba method
-        return self._predict(X, self.cl_centers, self.cl_radii, self._metric, self.p)
-
+        if self.verbosity > 0:
+            with ProgressBar(total=X.shape[0]) as progress:
+                return self._predict(X, self.cl_centers, self.cl_radii, self._metric, self.p, progress) 
+        else:
+            return self._predict(X, self.cl_centers, self.cl_radii, self._metric, self.p, None)
+    
     def score(self, X, y):
         """
         Score the model
