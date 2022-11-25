@@ -8,7 +8,9 @@ import pickle
 
 
 class SphereNet:
-    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, max_spheres_used=-1, metric='minkowski', p=2, optimize=True, standard_scaling=False, normalization=False, verbosity=0):
+
+    
+    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, max_spheres_used=-1, metric='euclid', p=2, optimize=True, standard_scaling=False, normalization=False, verbosity=0):
         """
         Initialize the SphereNet model
         
@@ -37,141 +39,20 @@ class SphereNet:
         self.normalization = normalization
         self.metric = metric
         self.p = p
-        
-        # assign metric function
-        if metric == 'minkowski':
-            self._metric = self._metric_minkowski
-        elif metric == 'euclid':
-            self._metric = self._metric_minkowski
-            self.p = 2
-        elif metric == 'manhattan':
-            self._metric = self._metric_minkowski
-            self.p = 1
-        elif metric == 'hamming':
-            self._metric = self._metric_hamming
-        elif metric == 'max' or metric == 'chebyshev':
-            self._metric = self._metric_max
-        elif metric == 'min':
-            self._metric = self._metric_min
-        elif metric == 'cosine':
-            self._metric = self._metric_cosine
-        elif metric == 'jaccard':
-            self._metric = self._metric_jaccard
-        elif metric == 'dice':
-            self._metric = self._metric_dice
-        elif metric == 'canberra':
-            self._metric = self._metric_canberra
-        elif metric == 'braycurtis':
-            self._metric = self._metric_braycurtis
-        elif metric == 'correlation':
-            self._metric = self._metric_correlation
-        elif metric == 'yule':
-            self._metric = self._metric_yule
-        elif metric == 'havensine':
-            self._metric = self._metric_havensine
-        elif metric == 'sum':
-            self._metric = self._metric_sum
-        elif metric == 'mean':
-            self._metric = self._metric_mean
-        elif metric == 'median':
-            self._metric = self._metric_median
-        elif metric == 'std':
-            self._metric = self._metric_std
-
+        # set metric index
+        self._metric = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum'].index(metric)
  
         # init scaler(s)
         if standard_scaling:
             self.standard_scaler = StandardScaler()
         if normalization:
             self.normalizer = Normalizer()
-
-
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_std(x1, x2, p) -> np.float64:
-        return np.std(x1 - x2)
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_mean(x1, x2, p) -> np.float64:
-        return np.mean(x1 - x2)
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_median(x1, x2, p) -> np.float64:
-        return np.median(x1 - x2)
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_minkowski(x1, x2, p) -> np.float64:
-        return np.sum((x1 - x2) ** p) ** (1. / p)
-    
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_hamming(x1, x2, p) -> np.float64:
-        return np.sum(np.abs(x1 - x2)) / x1.shape[0]
-    
+  
+        
  
     @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_min(x1, x2, p) -> np.float64:
-        return np.min(np.abs(x1 - x2))
-     
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_max(x1, x2, p) -> np.float64:
-        return np.max(np.abs(x1 - x2))
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_cosine(x1, x2, p) -> np.float64:
-        return 1 - np.sum(x1 * x2) / (np.sqrt(np.sum(x1 ** 2)) * np.sqrt(np.sum(x2 ** 2)) + 1e-8)
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_jaccard(x1, x2, p) -> np.float64:
-        return 1 - np.sum(np.minimum(x1, x2)) / (np.sum(np.maximum(x1, x2)) + 1e-8)
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_dice(x1, x2, p) -> np.float64:
-        return 1 - 2 * np.sum(np.minimum(x1, x2)) / (np.sum(x1) + np.sum(x2) + 1e-8)
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_canberra(x1, x2, p) -> np.float64:
-        return np.sum(np.abs(x1 - x2) / (np.abs(x1) + np.abs(x2) + 1e-8))
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_braycurtis(x1, x2, p) -> np.float64:
-        return np.sum(np.abs(x1 - x2)) / (np.sum(np.abs(x1 + x2)) + 1e-8)
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_correlation(x1, x2, p) -> np.float64:
-        return 1 - np.corrcoef(x1, x2)[0, 1]
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_yule(x1, x2, p) -> np.float64:
-        return np.sum(x1 * x2) / (np.sum(np.abs(x1 - x2)) + 1e-8)
-    
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_havensine(x1, x2, p) -> np.float64:
-        return np.arccos(np.sum(x1 * x2) / (np.sqrt(np.sum(x1 ** 2)) * np.sqrt(np.sum(x2 ** 2)) + 1e-8)) / np.pi
-
-    @staticmethod
-    @nb.njit(fastmath=True)
-    def _metric_sum(x1, x2, p) -> np.float64:
-        return np.sum(np.abs(x1 - x2))
-
-    
-    @staticmethod
     @nb.njit(parallel=True, fastmath=True)
-    def _calculate_spheres(X_IN, X_OUT, progress, min_dist_scaler, min_radius_threshold, metric, p):
+    def _calculate_spheres(X_IN, X_OUT, progress, min_dist_scaler, min_radius_threshold, _metric, p):
         """
         determine n spheres center and their single sphere performance
         :param X_IN: the inside points
@@ -179,14 +60,13 @@ class SphereNet:
         :param progress: the progress bar
         :return: the performance, radii and centers for point packages
         """
-        
+                
         # arrays have quadratic size 
         length_in, length_out = X_IN.shape[0], X_OUT.shape[0]
         # create arrays to be returned
-        perf = np.full((length_in, length_in), False) 
+        perf = np.full((length_in, length_in), False)
         radii = np.zeros(length_in, dtype=np.float64)
-        centers = np.zeros((length_in, X_IN.shape[1]), dtype=np.float64)
-        
+
         # rows to be used (not filtered by threshold)
         rows = np.full(length_in, True, dtype=np.bool_)
 
@@ -194,33 +74,101 @@ class SphereNet:
             # update progress
             if progress is not None:
                 progress.update(1)
-            
+                
+            # temp dist array (inside loop for evading race condition in parallelity)
+            dist = np.zeros(length_out, dtype=np.float64)
+
             # calculate the distance to the nearest outer point
             # since is 2d array perform on loop
-            dist = np.zeros(length_out, dtype=np.float64)
             for j in range(length_out):
-                dist[j] = metric(X_IN[i], X_OUT[j], p)
+                # WHY THIS MESSY CODE (UGLY WORKAROUND) AND NOT JUST A METRIC FUNCTION POINTER?
+                # the numba compiler seems to not be able to optimize
+                # good enough when using function pointers
+                # At least I had no success with it.
+                if _metric == 0:
+                    dist[j] = np.std(X_IN[i] - X_OUT[j])  # std
+                elif _metric == 1:
+                    dist[j] = np.sum((X_IN[i] - X_OUT[j]) ** p) ** (1. / p) # minkowski
+                elif _metric == 2:
+                    dist[j] = np.sqrt(np.sum((X_IN[i] - X_OUT[j]) ** 2.))  # euclid
+                elif _metric == 3:
+                    dist[j] = np.sum(np.abs(X_IN[i] - X_OUT[j])) / X_IN[i].shape[0]  # hamming
+                elif _metric == 4:
+                    dist[j] = np.max(np.abs(X_IN[i] - X_OUT[j]))  # max
+                elif _metric == 5:
+                    dist[j] = 1 - np.sum(X_IN[i] * X_OUT[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_OUT[j] ** 2)) + 1e-8)  # cosine
+                elif _metric == 6:
+                    dist[j] = 1 - np.sum(np.minimum(X_IN[i], X_OUT[j])) / (np.sum(np.maximum(X_IN[i], X_OUT[j])) + 1e-8)  # jaccard
+                elif _metric == 7:
+                    dist[j] = 1 - 2 * np.sum(np.minimum(X_IN[i], X_OUT[j])) / (np.sum(X_IN[i]) + np.sum(X_OUT[j]) + 1e-8)  # dice
+                elif _metric == 8: 
+                    dist[j] = np.sum(np.abs(X_IN[i] - X_OUT[j]) / (np.abs(X_IN[i]) + np.abs(X_OUT[j]) + 1e-8))  # canberra
+                elif _metric == 9:
+                    dist[j] = np.sum(np.abs(X_IN[i] - X_OUT[j])) / (np.sum(np.abs(X_IN[i] + X_OUT[j])) + 1e-8)  # braycurtis
+                elif _metric == 10:
+                    dist[j] = 1 - np.corrcoef(X_IN[i], X_OUT[j])[0, 1]  # correlation
+                elif _metric == 11:
+                    dist[j] = np.sum(X_IN[i] * X_OUT[j]) / (np.sum(np.abs(X_IN[i] - X_OUT[j])) + 1e-8)  # yule
+                elif _metric == 12:
+                    dist[j] = np.arccos(np.sum(X_IN[i] * X_OUT[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_OUT[j] ** 2)) + 1e-8)) / np.pi  # havensine
+                elif _metric == 13:
+                    dist[j] = np.sum(np.abs(X_IN[i] - X_OUT[j]))  # sum
+
             # scale and get min from dist array
             radius = min_dist_scaler * np.min(dist)
-             
+
             # only add if radius is larger than threshold
             if min_radius_threshold == -1 or radius > min_radius_threshold:
                 radii[i] = radius
-                centers[i] = X_IN[i]
-                 
+
                 # calculate performance (how many of the IN points are classified as in by just this one N-sphere)
                 # distances < radius of this sphere
                 # since is 2d array perform on loop, set each index directly
                 for j in range(length_in):
-                    perf[i, j] = metric(X_IN[i], X_IN[j], p) < radius
+                    # WHY THIS MESSY CODE (UGLY WORKAROUND) AND NOT JUST A METRIC FUNCTION POINTER?
+                    # the numba compiler seems to not be able to optimize
+                    # good enough when using function pointers
+                    # At least I had no success with it.
+                    if _metric == 0:
+                        perf[i, j] = np.std(X_IN[i] - X_IN[j]) < radius  # std
+                    elif _metric == 1:
+                        perf[i, j] = np.sum((X_IN[i] - X_IN[j]) ** p) ** (1. / p) < radius # minkowski
+                    elif _metric == 2:
+                        perf[i, j] = np.sqrt(np.sum((X_IN[i] - X_IN[j]) ** 2.)) < radius  # euclid
+                    elif _metric == 3:
+                        perf[i, j] = np.sum(np.abs(X_IN[i] - X_IN[j])) / X_IN[i].shape[0] < radius  # hamming
+                    elif _metric == 4:
+                        perf[i, j] = np.max(np.abs(X_IN[i] - X_IN[j])) < radius  # max
+                    elif _metric == 5:
+                        perf[i, j] = 1 - np.sum(X_IN[i] * X_IN[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_IN[j] ** 2)) + 1e-8) < radius  # cosine
+                    elif _metric == 6:
+                        perf[i, j] = 1 - np.sum(np.minimum(X_IN[i], X_IN[j])) / (np.sum(np.maximum(X_IN[i], X_IN[j])) + 1e-8) < radius  # jaccard
+                    elif _metric == 7:
+                        perf[i, j] = 1 - 2 * np.sum(np.minimum(X_IN[i], X_IN[j])) / (np.sum(X_IN[i]) + np.sum(X_IN[j]) + 1e-8) < radius  # dice
+                    elif _metric == 8: 
+                        perf[i, j] = np.sum(np.abs(X_IN[i] - X_IN[j]) / (np.abs(X_IN[i]) + np.abs(X_IN[j]) + 1e-8)) < radius  # canberra
+                    elif _metric == 9:
+                        perf[i, j] = np.sum(np.abs(X_IN[i] - X_IN[j])) / (np.sum(np.abs(X_IN[i] + X_IN[j])) + 1e-8) < radius  # braycurtis
+                    elif _metric == 10:
+                        perf[i, j] = 1 - np.corrcoef(X_IN[i], X_IN[j])[0, 1] < radius  # correlation
+                    elif _metric == 11:
+                        perf[i, j] = np.sum(X_IN[i] * X_IN[j]) / (np.sum(np.abs(X_IN[i] - X_IN[j])) + 1e-8) < radius  # yule
+                    elif _metric == 12:
+                        perf[i, j] = np.arccos(np.sum(X_IN[i] * X_IN[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_IN[j] ** 2)) + 1e-8)) / np.pi < radius  # havensine
+                    elif _metric == 13:
+                        perf[i, j] = np.sum(np.abs(X_IN[i] - X_IN[j])) < radius  # sum
+                    
+                    
             else:
                 rows[i] = False
-         
-        return perf[rows], radii[rows], centers[rows]
 
+        return perf[rows], radii[rows], X_IN[rows]  # cut rows; X_IN as centers
 
-    @staticmethod
-    @nb.njit(parallel=True)
+    
+
+    
+    @staticmethod 
+    @nb.njit(parallel=True, fastmath=True)
     def _remove_ambiguity(perf, radii, centers, progress, optimization_tolerance):
         """
         Remove ambiguity / optimize the spheres by removing overlapping sphere results.
@@ -288,7 +236,7 @@ class SphereNet:
                 if perf_stl[stl_idx][col_idx]:
                     # this is activated, trues should is +1 because this one should be found
                     trues_should += 1
-                    
+
                     # continue with lts sorted loop
                     # it is more likely to find a True value
                     # if the rows with most true values are on top
@@ -311,26 +259,26 @@ class SphereNet:
 
                             # anyways, the row (depth) loop can be stopped
                             break
-                            
-                    
+
+
                     # if is not found,
                     # use tolerance to have a bool found (easier removal)
                     # but if tolerance is used up, sphere has to be disabled
                     if trues_found != trues_should:
                         tolerance_left -= 1
-                    
+
                         # no tolerance anymore, diable row and break loop
                         if tolerance_left == -1:
                             break
-                            
+
                         trues_found += 1
-                        
+
 
             # set enabled,
             # if no amiguousity has been found
             # set disabled, if has been found
             rows[this_lts_idx] = row_disabled
-            
+
 
         # reverse rows for indexing
         rows = ~rows
@@ -339,8 +287,8 @@ class SphereNet:
         cl_centers = centers_lts[rows]
         cl_radii = radii_lts[rows]
         return cl_centers, cl_radii
-
-
+ 
+    
     def fit(self, X, y):
         """
         Fit the SphereNet model to the data
@@ -374,9 +322,11 @@ class SphereNet:
         # calculate the spheres and their performance
         if self.verbosity > 0:
             with ProgressBar(total=X_IN.shape[0]) as progress:
+                # perf, radii, centers = self.__calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
                 perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
         else:
-            perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, None, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
+            pass
+            # perf, radii, centers = self.__calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric_calc_2, self._metric, self.p)
 
         if self.verbosity > 1: 
             print("Removing ambiguity...")
@@ -394,31 +344,74 @@ class SphereNet:
 
         # use only max amount of spheres
         if self.max_spheres_used != -1:
+            if self.verbosity > 1:
+                print(f'Spheres without capping: {len(self.cl_radii)}')
+            
             self.cl_centers, self.cl_radii = self.cl_centers[:self.max_spheres_used], self.cl_radii[:self.max_spheres_used]
+            
+        if self.verbosity > 1:
+            print(f'N-Spheres produced for classification: {len(self.cl_radii)}')
 
         
         return self
-
-
+    
     @staticmethod
     @nb.njit(parallel=True, fastmath=True)
-    def _predict(X, cl_centers, cl_radii, metric, p):
+    def _predict(X, cl_centers, cl_radii, _metric, p):
         """
         Predict the class of the data.
         :param X: The input
         :return: If is inside class as bool
         """
- 
-        y = np.full(X.shape[0], False, dtype=np.bool_)
 
+        # create predictions (false by default)
+        y = np.full(X.shape[0], False, dtype=np.bool_)
+        
+
+        # loop through all rows
         for i in nb.prange(X.shape[0]):
+            # loop till one classifier is true
             for j in range(cl_centers.shape[0]):
-                if metric(cl_centers[j], X[i], p) < cl_radii[j]:
+                # WHY THIS MESSY CODE (UGLY WORKAROUND) AND NOT JUST A METRIC FUNCTION POINTER?
+                # the numba compiler seems to not be able to optimize
+                # good enough when using function pointers
+                # At least I had no success with it.
+                if _metric == 0:
+                    inside = np.std(cl_centers[j] - X[i]) < cl_radii[j]  # std
+                elif _metric == 1:
+                    inside = np.sum((cl_centers[j] - X[i]) ** p) ** (1. / p) < cl_radii[j] # minkowski
+                elif _metric == 2:
+                    inside = np.sqrt(np.sum((cl_centers[j] - X[i]) ** 2.)) < cl_radii[j]  # euclid
+                elif _metric == 3:
+                    inside = np.sum(np.abs(cl_centers[j] - X[i])) / cl_centers[j].shape[0] < cl_radii[j]  # hamming
+                elif _metric == 4:
+                    inside = np.max(np.abs(cl_centers[j] - X[i])) < cl_radii[j]  # max
+                elif _metric == 5:
+                    inside = 1 - np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8) < cl_radii[j]  # cosine
+                elif _metric == 6:
+                    inside = 1 - np.sum(np.minimum(cl_centers[j], X[i])) / (np.sum(np.maximum(cl_centers[j], X[i])) + 1e-8) < cl_radii[j]  # jaccard
+                elif _metric == 7:
+                    inside = 1 - 2 * np.sum(np.minimum(cl_centers[j], X[i])) / (np.sum(cl_centers[j]) + np.sum(X[i]) + 1e-8) < cl_radii[j]  # dice
+                elif _metric == 8: 
+                    inside = np.sum(np.abs(cl_centers[j] - X[i]) / (np.abs(cl_centers[j]) + np.abs(X[i]) + 1e-8)) < cl_radii[j]  # canberra
+                elif _metric == 9:
+                    inside = np.sum(np.abs(cl_centers[j] - X[i])) / (np.sum(np.abs(cl_centers[j] + X[i])) + 1e-8) < cl_radii[j]  # braycurtis
+                elif _metric == 10:
+                    inside = 1 - np.corrcoef(cl_centers[j], X[i])[0, 1] < cl_radii[j]  # correlation
+                elif _metric == 11:
+                    inside = np.sum(cl_centers[j] * X[i]) / (np.sum(np.abs(cl_centers[j] - X[i])) + 1e-8) < cl_radii[j]  # yule
+                elif _metric == 12:
+                    inside = np.arccos(np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8)) / np.pi < cl_radii[j]  # havensine
+                elif _metric == 13:
+                    inside = np.sum(np.abs(cl_centers[j] - X[i])) < cl_radii[j]  # sum
+                
+                
+                if inside:
                     y[i] = True
                     break
 
         return y
-    
+   
     def predict(self, X):
         """
         Predict the class of the data and scale data before.
@@ -445,7 +438,7 @@ class SphereNet:
 
         assert X.shape[0] == y.shape[0]
 
-        return self.predict(X).sum() / y.shape[0]
+        return (self.predict(X) == (y == self.in_class)).sum() / y.shape[0]
 
 
     def dump(self, file):
