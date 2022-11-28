@@ -661,7 +661,7 @@ class MultiSphereNet:
                 # get a not mask of not classified values
                 not_classified_mask = ~insides.any(axis=0)
                 # and replace these indices with the argmin of min_outsides
-                classification[not_classified_mask] = min_outsides[not_classified_mask].argmin(axis=0)
+                classification[not_classified_mask] = min_outsides[:, not_classified_mask].argmin(axis=0)
             
             # replace indexes with classes
             # from the dict
