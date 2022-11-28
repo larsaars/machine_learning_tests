@@ -8,6 +8,7 @@ import pickle
 
 # GLOBAL VARS
 metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum']
+pred_modes = ['conservative', 'careful', 'force']
 
 
 # CLASSIFICATION CLASSES
@@ -372,19 +373,29 @@ class SphereNet:
     
     @staticmethod
     @nb.njit(parallel=True, fastmath=True)
-    def _predict(X, cl_centers, cl_radii, _metric, p, progress):
+    def _predict(X, return_distances, cl_centers, cl_radii, _metric, p, progress):
         """
         Predict the class of the data.
         :param X: The input
+        :param return_distances: Return max distance inside and min distance outside (delta from radius).
         :return: If is inside class as bool
         """
+        
+        # length of X
+        length = X.shape[0]
 
         # create predictions (false by default)
-        y = np.full(X.shape[0], False, dtype=np.bool_)
+        y = np.full(length, False, dtype=np.bool_)
         
+        # if return distances max dist inside and min dist outside
+        if return_distances:
+            # between [0, +inf[
+            # so fill min with large values and max with zeros
+            min_dist_outside = np.full(length, 1e8)
+            max_dist_inside = np.zeros(length)
 
         # loop through all rows
-        for i in nb.prange(X.shape[0]):
+        for i in nb.prange(length):
             # update progress
             if progress is not None:
                 progress.update(1)
@@ -396,45 +407,68 @@ class SphereNet:
                 # good enough when using function pointers
                 # At least I had no success with it.
                 if _metric == 0:
-                    inside = np.std(cl_centers[j] - X[i]) < cl_radii[j]  # std
+                    dist = np.std(cl_centers[j] - X[i])  # std
                 elif _metric == 1:
-                    inside = np.sum((cl_centers[j] - X[i]) ** p) ** (1. / p) < cl_radii[j] # minkowski
+                    dist = np.sum((cl_centers[j] - X[i]) ** p) ** (1. / p) # minkowski
                 elif _metric == 2:
-                    inside = np.sqrt(np.sum((cl_centers[j] - X[i]) ** 2.)) < cl_radii[j]  # euclid
+                    dist = np.sqrt(np.sum((cl_centers[j] - X[i]) ** 2.))  # euclid
                 elif _metric == 3:
-                    inside = np.sum(np.abs(cl_centers[j] - X[i])) / cl_centers[j].shape[0] < cl_radii[j]  # hamming
+                    dist = np.sum(np.abs(cl_centers[j] - X[i])) / cl_centers[j].shape[0]  # hamming
                 elif _metric == 4:
-                    inside = np.max(np.abs(cl_centers[j] - X[i])) < cl_radii[j]  # max
+                    dist = np.max(np.abs(cl_centers[j] - X[i]))  # max
                 elif _metric == 5:
-                    inside = 1 - np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8) < cl_radii[j]  # cosine
+                    dist = 1 - np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8)  # cosine
                 elif _metric == 6:
-                    inside = 1 - np.sum(np.minimum(cl_centers[j], X[i])) / (np.sum(np.maximum(cl_centers[j], X[i])) + 1e-8) < cl_radii[j]  # jaccard
+                    dist = 1 - np.sum(np.minimum(cl_centers[j], X[i])) / (np.sum(np.maximum(cl_centers[j], X[i])) + 1e-8)  # jaccard
                 elif _metric == 7:
-                    inside = 1 - 2 * np.sum(np.minimum(cl_centers[j], X[i])) / (np.sum(cl_centers[j]) + np.sum(X[i]) + 1e-8) < cl_radii[j]  # dice
+                    dist = 1 - 2 * np.sum(np.minimum(cl_centers[j], X[i])) / (np.sum(cl_centers[j]) + np.sum(X[i]) + 1e-8)  # dice
                 elif _metric == 8: 
-                    inside = np.sum(np.abs(cl_centers[j] - X[i]) / (np.abs(cl_centers[j]) + np.abs(X[i]) + 1e-8)) < cl_radii[j]  # canberra
+                    dist = np.sum(np.abs(cl_centers[j] - X[i]) / (np.abs(cl_centers[j]) + np.abs(X[i]) + 1e-8))  # canberra
                 elif _metric == 9:
-                    inside = np.sum(np.abs(cl_centers[j] - X[i])) / (np.sum(np.abs(cl_centers[j] + X[i])) + 1e-8) < cl_radii[j]  # braycurtis
+                    dist = np.sum(np.abs(cl_centers[j] - X[i])) / (np.sum(np.abs(cl_centers[j] + X[i])) + 1e-8)  # braycurtis
                 elif _metric == 10:
-                    inside = 1 - np.corrcoef(cl_centers[j], X[i])[0, 1] < cl_radii[j]  # correlation
+                    dist = 1 - np.corrcoef(cl_centers[j], X[i])[0, 1]  # correlation
                 elif _metric == 11:
-                    inside = np.sum(cl_centers[j] * X[i]) / (np.sum(np.abs(cl_centers[j] - X[i])) + 1e-8) < cl_radii[j]  # yule
+                    dist = np.sum(cl_centers[j] * X[i]) / (np.sum(np.abs(cl_centers[j] - X[i])) + 1e-8)  # yule
                 elif _metric == 12:
-                    inside = np.arccos(np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8)) / np.pi < cl_radii[j]  # havensine
+                    dist = np.arccos(np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8)) / np.pi  # havensine
                 elif _metric == 13:
-                    inside = np.sum(np.abs(cl_centers[j] - X[i])) < cl_radii[j]  # sum
+                    dist = np.sum(np.abs(cl_centers[j] - X[i]))  # sum
                 
                 
-                if inside:
-                    y[i] = True
-                    break
+                if return_distances: 
+                    # if return distances loop through whole loop
+                    # in order to find max inside distance and min outside distance
+                    # get delta from radius
+                    dist -= cl_radii[j] 
+                    # if is inside radius
+                    if dist < 0:
+                        y[i] = True
+                         
+                        # if absolute delta is larger than current max inside, replace
+                        dist = abs(dist)
+                        if dist > max_dist_inside[i]:
+                            max_dist_inside[i] = dist  
+                    else:
+                        # if delta is smaller than current min outside, replace
+                        if dist < min_dist_outside[i]:
+                            min_dist_outside[i] = dist
+                else:
+                    # if not returning distances
+                    # don't loop whole loop
+                    # if is inside (dist smaller than radius)
+                    if dist < cl_radii[j]:
+                        y[i] = True
+                        break
 
-        return y
+        return y, min_dist_outside, max_dist_inside
+    
    
-    def predict(self, X):
+    def predict(self, X, return_distances=False):
         """
         Predict the class of the data and scale data before.
         :param X: The input
+        :param return_distances: Return max distance inside and min distance outside as well.
         :return: The predicted class
         """
         # transform X as defined
@@ -447,9 +481,13 @@ class SphereNet:
         # use _predict numba method
         if self.verbosity > 0:
             with ProgressBar(total=X.shape[0]) as progress:
-                return self._predict(X, self.cl_centers, self.cl_radii, self._metric, self.p, progress) 
+                res = self._predict(X, return_distances, self.cl_centers, self.cl_radii, self._metric, self.p, progress) 
         else:
-            return self._predict(X, self.cl_centers, self.cl_radii, self._metric, self.p, None)
+            res = self._predict(X, return_distances, self.cl_centers, self.cl_radii, self._metric, self.p, None)
+        
+        
+        # if only return y, do so
+        return res if return_distances else res[0]
     
     def score(self, X, y):
         """
@@ -498,15 +536,26 @@ class MultiSphereNet:
     Init with a list of SphereNet classifiers and shares normalizers and standard scalers
     """
     
-    def __init__(self, standard_scaling=False, normalization=False, **kwargs):
+    def __init__(self, standard_scaling=False, normalization=False, pred_mode='conservative', **kwargs):
         """
         MultiSphereNet
-
+        
+        Prediction Modes:
+        - conservative: Fastest classification mode. Points classified can be overwritten, if one inside is found, point will be marked. -1 value for not classified points.
+        - careful: If there are classification conflicts (points classified by multiple classifiers), those will be resolved by comparing max distance to sphere shape. -1 value for not classified points.
+        - force: Same as careful mode, but a class is forced by min distance when not classified by any SphereNet.
+        
+        
+        :param standard_scaling: See SphereNet.
+        :param normalization: See SphereNet.
+        :param pred_mode: Prediction mode. Available: ['conservative', 'careful', 'force']
         :param kwargs: see SphereNet
         """
 
         self.standard_scaling = bool(standard_scaling)
         self.normalization = bool(normalization)
+        self.pred_mode = pred_mode
+        self._pred_mode = pred_modes.index(pred_mode)
         self.kwargs = kwargs
         self.sphere_nets = []
 
@@ -574,14 +623,55 @@ class MultiSphereNet:
         if self.normalization:
             X = self.normalizer.transform(X)
             
+        # length of X
+        length = X.shape[0]
+         
         # create a array filled with -1
-        y = np.full(X.shape[0], -1, dtype=np.int8)
+        if self._pred_mode == 0:  # conservative  
+            y = np.full(length, -1, dtype=np.int8)
+            
+            # predict for each SphereNet
+            for net in self.sphere_nets:
+                y[net.predict(X)] = net.in_class  # set class if SphereNet predicts True for the data point
 
-        # predict for each SphereNet
-        for net in self.sphere_nets:
-            y[net.predict(X)] = net.in_class  # set class if SphereNet predicts True for the data point
-
-        return y
+            return y
+        else:  # else careful or force
+            # arrays of all classified max_insides and min_outside distances
+            insides = np.full((len(self.sphere_nets), length), False)
+            max_insides = np.zeros((len(self.sphere_nets), length))
+            min_outsides = np.zeros((len(self.sphere_nets), length))
+            
+            # for later replacing indices, create dict with indices and real class numbers
+            idx_class = dict()
+            
+            # make predictions
+            for i, net in enumerate(self.sphere_nets):
+                insides[i], min_outsides[i], max_insides[i] = net.predict(X, return_distances=True)
+                idx_class[i] = net.in_class
+            
+            # get inside max elements (argmax)
+            # use this as classification
+            classification = max_insides.argmax(axis=0)
+            
+            # if mode is force class
+            # which means not classified points (classification == 0) 
+            # should be forced the nearest class upon
+            # for this use min_isides
+            if self._pred_mode == 2:
+                # get a not mask of not classified values
+                not_classified_mask = ~insides.any(axis=0)
+                # and replace these indices with the argmin of min_outsides
+                classification[not_classified_mask] = min_outsides[not_classified_mask].argmin(axis=0)
+            
+            # replace indexes with classes
+            # from the dict
+            # https://stackoverflow.com/questions/33529593/how-to-use-a-dictionary-to-translate-replace-elements-of-an-array
+            idx_class_keys, idx_class_values = list(idx_class.keys()), list(idx_class.values()) 
+            sort_idx = np.argsort(idx_class_keys)
+            idx = np.searchsorted(idx_class_keys, classification, sorter=sort_idx)
+            return np.asarray(idx_class_values)[sort_idx][idx] 
+            
+            
 
     def score(self, X, y):
         """
@@ -627,5 +717,3 @@ class MultiSphereNet:
 
     def __iter__(self):
         return iter(self.sphere_nets)
-
-
