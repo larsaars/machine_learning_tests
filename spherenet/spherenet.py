@@ -652,16 +652,20 @@ class MultiSphereNet:
             # get inside max elements (argmax)
             # use this as classification
             classification = max_insides.argmax(axis=0)
+
+            # get a not mask of not classified values
+            not_classified_mask = ~insides.any(axis=0)
             
             # if mode is force class
             # which means not classified points (classification == 0) 
             # should be forced the nearest class upon
             # for this use min_isides
             if self._pred_mode == 2:
-                # get a not mask of not classified values
-                not_classified_mask = ~insides.any(axis=0)
                 # and replace these indices with the argmin of min_outsides
                 classification[not_classified_mask] = min_outsides[:, not_classified_mask].argmin(axis=0)
+            else:
+                # keep not classified values as -1
+                classification[-not_classified_mask] = -1
             
             # replace indexes with classes
             # from the dict
