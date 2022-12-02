@@ -665,7 +665,7 @@ class MultiSphereNet:
                 classification[not_classified_mask] = min_outsides[:, not_classified_mask].argmin(axis=0)
             else:
                 # keep not classified values as -1
-                classification[-not_classified_mask] = -1
+                classification[not_classified_mask] = -1
             
             # replace indexes with classes
             # from the dict
