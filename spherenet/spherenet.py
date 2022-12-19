@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler, Normalizer
 import pickle
 
 # GLOBAL VARS
-metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum']
+metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum', 'mse']
 pred_modes = ['conservative', 'careful', 'force']
 
 
@@ -18,7 +18,7 @@ class SphereNet:
     """
 
     
-    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, max_spheres_used=-1, metric='euclid', p=2, optimize=True, standard_scaling=False, normalization=False, verbosity=0):
+    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, optimization_repetitions=1, optimization_parallel=False, min_num_classified=2, max_spheres_used=-1, metric='euclid', p=2, standard_scaling=False, normalization=False, verbosity=0):
         """
         Initialize the SphereNet model
         
@@ -26,10 +26,12 @@ class SphereNet:
         :param min_dist_scaler: The minimum distance between spheres
         :param min_radius_threshold: The minimum radius of a sphere (if is -1, there is none)
         :param optimization_tolerance: The optimization tolerance (higher = more optimization but less performance)
+        :param optimization_repetitions: The number the optimizer will be let rerun. The first run(s) some optimizations can be missed when let run parallel. When set to 0, optimization will not be performed.
+        :param optimization_parallel: Parallel optimization does not optimize optimally because of race coniditons, but is much faster. When using parallel optimization, optimization_repetitions should be greater than 1.
+        :param min_num_classified: A sphere must at least classifiy this amount of points to be kept. Can be used for outlier removal.
         :param max_spheres_used: The maximum number of spheres used for classification (-1 = no limit)
         :param metric: The distance metric to be used. Available: ['minkowski', 'hamming', 'max', 'min']
         :param p: the p hyperparam (order of magnitude) when using the minkowski distance (p=1 is manhattan, p=2 is euclid)
-        :param optimize: if optimization should be activated
         :param standard_scaling: if should use standard scaling. Can also be a StandardScaler object
         :param normalization: if should use normalization. Can also be a Normalizer object
         :param verbosity: The verbosity level (between 0 and 2)
@@ -40,9 +42,11 @@ class SphereNet:
         self.min_dist_scaler = min_dist_scaler
         self.min_radius_threshold = min_radius_threshold
         self.optimization_tolerance = optimization_tolerance
+        self.optimization_repetitions = optimization_repetitions
+        self.optimization_parallel = optimization_parallel
+        self.min_num_classified = min_num_classified
         self.max_spheres_used = max_spheres_used
         self.verbosity = verbosity
-        self.optimize = optimize
         self.standard_scaling = bool(standard_scaling)  # bools because can also be the scaler objects
         self.normalization = bool(normalization)  # see above
         self.metric = metric
@@ -62,25 +66,24 @@ class SphereNet:
                 self.normalizer = normalization
             else:
                 self.normalizer = Normalizer()
-  
-        
+    
  
     @staticmethod
     @nb.njit(parallel=True, fastmath=True)
-    def _calculate_spheres(X_IN, X_OUT, progress, min_dist_scaler, min_radius_threshold, _metric, p):
+    def _calculate_spheres(X_IN, X_OUT, progress, min_dist_scaler, min_radius_threshold, min_num_classified, _metric, p):
         """
         determine n spheres center and their single sphere performance
         :param X_IN: the inside points
         :param X_OUT: the outside points
         :param progress: the progress bar
-        :return: the performance, radii and centers for point packages
+        :return: the performance, performance length, radii and centers for point packages
         """
                 
-        # arrays have quadratic size 
         length_in, length_out = X_IN.shape[0], X_OUT.shape[0]
         # create arrays to be returned
         perf = np.full((length_in, length_in), False)
         radii = np.zeros(length_in, dtype=np.float64)
+        perf_len = np.zeros(length_in)
 
         # rows to be used (not filtered by threshold)
         rows = np.full(length_in, True, dtype=np.bool_)
@@ -127,6 +130,8 @@ class SphereNet:
                     dist[j] = np.arccos(np.sum(X_IN[i] * X_OUT[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_OUT[j] ** 2)) + 1e-8)) / np.pi  # havensine
                 elif _metric == 13:
                     dist[j] = np.sum(np.abs(X_IN[i] - X_OUT[j]))  # sum
+                elif _metric == 14:
+                    dist[j] = np.sum((X_IN[i] - X_OUT[j]) ** 2) / X_IN[i].shape[0]  # mse
 
             # scale and get min from dist array
             radius = min_dist_scaler * np.min(dist)
@@ -171,32 +176,35 @@ class SphereNet:
                         perf[i, j] = np.arccos(np.sum(X_IN[i] * X_IN[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_IN[j] ** 2)) + 1e-8)) / np.pi < radius  # havensine
                     elif _metric == 13:
                         perf[i, j] = np.sum(np.abs(X_IN[i] - X_IN[j])) < radius  # sum
+                    elif _metric == 14:
+                        perf[i, j] = np.sum((X_IN[i] - X_IN[j]) ** 2) / X_IN[i].shape[0]  # mse
                     
                     
+                # calculate the sum of correctly classified performances
+                perf_len[i] = perf[i].sum()
+                
+                # if this sum is smaller than a given value, set this row to false
+                if perf_len[i] < min_num_classified:
+                    rows[i] = False
             else:
                 rows[i] = False
 
-        return perf[rows], radii[rows], X_IN[rows]  # cut rows; X_IN as centers
-
-    
+        return perf[rows], perf_len[rows], radii[rows], X_IN[rows]  # cut rows; X_IN as centers
+  
 
     
     @staticmethod 
-    @nb.njit(parallel=True, fastmath=True)
-    def _remove_ambiguity(perf, radii, centers, progress, optimization_tolerance):
+    def _remove_ambiguity(perf, perf_len, radii, centers, progress, optimization_tolerance):
         """
         Remove ambiguity / optimize the spheres by removing overlapping sphere results.
         :param perf: the performance of the spheres
+        :param perf_len: the number of correctly classified points for each row on training data
         :param radii: the radii of the spheres
         :param centers: the centers of the spheres
         :param progress: the progress bar
-        :return: optimized radii and centers that can be used for classification
+        :return: optimized performances, radii and centers that can be used for classification
         """
-
-
-        # get len of performances (trues on axis 1)
-        perf_len = perf.sum(axis=1)
-
+  
         # sort performances, radii and centers in the same manner
         # as needed by algorithm
         # sort:
@@ -206,15 +214,17 @@ class SphereNet:
         idx_stl = perf_len.argsort()
         idx_lts = idx_stl[::-1]
         perf_len_stl = perf_len[idx_stl]
+        perf_len_lts = perf_len[idx_lts]
         perf_lts = perf[idx_lts]
         perf_stl = perf[idx_stl]
         radii_lts = radii[idx_lts]
         centers_lts = centers[idx_lts]
 
         rows_len, cols_len = perf_stl.shape
+        # rows is sorted by lts, true means is disabled, false means enabled
         rows = np.full(
             rows_len, False, dtype=np.bool_
-        )  # rows is sorted by lts, true means is disabled, false means enabled
+        )  
 
         # outer loop:
         # loop rows in stl sorted list
@@ -297,8 +307,8 @@ class SphereNet:
         # reverse rows for indexing
         rows = ~rows
 
-        # get centers and radii actually useable for classication
-        return centers_lts[rows], radii_lts[rows]
+        # return perfomances, centers and radii used for classification
+        return perf_lts[rows], perf_len_lts[rows], centers_lts[rows], radii_lts[rows]
  
     
     def fit(self, X, y):
@@ -340,22 +350,24 @@ class SphereNet:
         # calculate the spheres and their performance
         if self.verbosity > 0:
             with ProgressBar(total=X_IN.shape[0]) as progress:
-                perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
+                self._perf, self._perf_len, self.cl_radii, self.cl_centers = self._calculate_spheres(X_IN, X_OUT, progress, self.min_dist_scaler, self.min_radius_threshold, self.min_num_classified, self._metric, self.p)
         else:
-            perf, radii, centers = self._calculate_spheres(X_IN, X_OUT, None, self.min_dist_scaler, self.min_radius_threshold, self._metric, self.p)
+            self._perf, self._perf_len, self.cl_radii, self.cl_centers = self._calculate_spheres(X_IN, X_OUT, None, self.min_dist_scaler, self.min_radius_threshold, self.min_num_classified, self._metric, self.p)
 
         if self.verbosity > 1: 
-            print("Removing ambiguity...")
+            print('Removing ambiguity...')
 
         # remove ambiguity / optimize the spheres
-        if self.optimize:
+        # repeat as often as defined
+        for rep in range(self.optimization_repetitions):
+            if self.verbosity > 1:
+                print(f'Repeating optimization: {rep}')
+            
             if self.verbosity > 0:
-                with ProgressBar(total=perf.shape[0]) as progress:
-                    self.cl_centers, self.cl_radii = self._remove_ambiguity(perf, radii, centers, progress, self.optimization_tolerance)
+                with ProgressBar(total=self._perf.shape[0]) as progress:
+                    self._perf, self._perf_len, self.cl_centers, self.cl_radii = nb.njit(self._remove_ambiguity, parallel=self.optimization_parallel, fastmath=True)(self._perf, self._perf_len, self.cl_radii, self.cl_centers, progress, self.optimization_tolerance)
             else:
-                self.cl_centers, self.cl_radii = self._remove_ambiguity(perf, radii, centers, None, self.optimization_tolerance)
-        else:
-            self.cl_centers, self.cl_radii = centers, radii
+                self._perf, self._perf_len, self.cl_centers, self.cl_radii = nb.njit(self._remove_ambiguity, parallel=self.optimization_parallel, fastmath=True)(self._perf, self._perf_len, self.cl_radii, self.cl_centers, None, self.optimization_tolerance)
 
 
         # use only max amount of spheres
@@ -434,6 +446,8 @@ class SphereNet:
                     dist = np.arccos(np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8)) / np.pi  # havensine
                 elif _metric == 13:
                     dist = np.sum(np.abs(cl_centers[j] - X[i]))  # sum
+                elif _metric == 14:
+                    dist = np.sum((cl_centers[j] - X[i]) ** 2) / X[i].shape[0]  # mse
                 
                 
                 if return_distances: 
@@ -653,7 +667,7 @@ class MultiSphereNet:
             # use this as classification
             classification = max_insides.argmax(axis=0)
 
-            # get a not mask of not classified values
+            # get a not mask of classified values
             not_classified_mask = ~insides.any(axis=0)
             
             # if mode is force class
@@ -663,7 +677,7 @@ class MultiSphereNet:
             if self._pred_mode == 2:
                 # and replace these indices with the argmin of min_outsides
                 classification[not_classified_mask] = min_outsides[:, not_classified_mask].argmin(axis=0)
-            else:
+            elif self._pred_mode == 1:
                 # keep not classified values as -1
                 classification[not_classified_mask] = -1
             
@@ -721,3 +735,6 @@ class MultiSphereNet:
 
     def __iter__(self):
         return iter(self.sphere_nets)
+    
+    def __getitem__(self, index):
+        return self.sphere_nets[index]
