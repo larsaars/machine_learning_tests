@@ -193,8 +193,6 @@ class SphereNet:
             else:
                 rows[i] = False
                 
-            print(rows[i])
-
         return perf[rows], perf_len[rows], radii[rows], X_IN[rows]  # cut rows; X_IN as centers
   
 
