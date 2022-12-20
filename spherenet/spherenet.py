@@ -4,6 +4,7 @@ import numpy as np
 from numba_progress import ProgressBar
 import numba as nb
 from sklearn.preprocessing import StandardScaler, Normalizer
+from sklearn.neighbors import LocalOutlierFactor
 import pickle
 
 # GLOBAL VARS
@@ -18,7 +19,7 @@ class SphereNet:
     """
 
     
-    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, optimization_repetitions=1, optimization_parallel=False, min_num_classified=2, max_spheres_used=-1, metric='euclid', p=2, standard_scaling=False, normalization=False, verbosity=0):
+    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, optimization_repetitions=1, optimization_parallel=False, min_num_classified=2, max_spheres_used=-1, metric='euclid', p=2, standard_scaling=False, normalization=False, remove_training_outliers=True, verbosity=0):
         """
         Initialize the SphereNet model
         
@@ -34,6 +35,7 @@ class SphereNet:
         :param p: the p hyperparam (order of magnitude) when using the minkowski distance (p=1 is manhattan, p=2 is euclid)
         :param standard_scaling: if should use standard scaling. Can also be a StandardScaler object
         :param normalization: if should use normalization. Can also be a Normalizer object
+        :param remove_training_outliers: if should find outliers in training data
         :param verbosity: The verbosity level (between 0 and 2)
         """
         
@@ -49,6 +51,7 @@ class SphereNet:
         self.verbosity = verbosity
         self.standard_scaling = bool(standard_scaling)  # bools because can also be the scaler objects
         self.normalization = bool(normalization)  # see above
+        self.remove_training_outliers = remove_training_outliers
         self.metric = metric
         self.p = p
         # set metric index
@@ -193,6 +196,7 @@ class SphereNet:
             else:
                 rows[i] = False
                 
+
         return perf[rows], perf_len[rows], radii[rows], X_IN[rows]  # cut rows; X_IN as centers
   
 
@@ -340,7 +344,28 @@ class SphereNet:
                 print('transforming with normalizer')
                 
             X = self.normalizer.transform(X)
- 
+         
+        # remove outliers with LocalOutlierFactor from IN and OUT distributions
+        # if enabled
+        if self.remove_training_outliers:
+            if self.verbosity > 1:
+                print('removing outliers from IN and OUT training distributions')
+            
+            # array marking if is no outlier
+            not_outliers = np.full(len(X), False)
+            
+            # for IN and OUT distribution let LocalOutlierFactor run
+            cl_idx = y == self.in_class
+            not_outliers[cl_idx] = LocalOutlierFactor().fit_predict(X[cl_idx]) == 1
+            
+            cl_idx = y != self.in_class
+            not_outliers[cl_idx] = LocalOutlierFactor().fit_predict(X[cl_idx]) == 1
+            
+            # overwrite X
+            X = X[not_outliers]
+            y = y[not_outliers]
+            
+        
         # get in X_IN and X_OUT points
         X_IN = X[y == self.in_class]
         X_OUT = X[y != self.in_class]
@@ -557,7 +582,7 @@ class MultiSphereNet:
     Init with a list of SphereNet classifiers and shares normalizers and standard scalers
     """
     
-    def __init__(self, standard_scaling=False, normalization=False, pred_mode='conservative', **kwargs):
+    def __init__(self, standard_scaling=False, normalization=False, remove_training_outliers=True, pred_mode='conservative', verbosity=0, **kwargs):
         """
         MultiSphereNet
         
@@ -569,14 +594,18 @@ class MultiSphereNet:
         
         :param standard_scaling: See SphereNet.
         :param normalization: See SphereNet.
+        :param remove_training_outliers: See SphereNet.
         :param pred_mode: Prediction mode. Available: ['conservative', 'careful', 'force']
+        :param verbosity: logging level
         :param kwargs: see SphereNet
         """
 
         self.standard_scaling = bool(standard_scaling)
         self.normalization = bool(normalization)
+        self.remove_training_outliers = remove_training_outliers
         self.pred_mode = pred_mode
         self._pred_mode = pred_modes.index(pred_mode)
+        self.verbosity = verbosity
         self.kwargs = kwargs
         self.sphere_nets = []
 
@@ -623,9 +652,27 @@ class MultiSphereNet:
         # get unique classes
         self.classes = np.unique(y)
         
+        # remove outliers if enabled
+        # from every single distribution
+        if self.remove_training_outliers:
+            if self.verbosity > 1:
+                print('removing outliers from training data')
+            
+            # array marking if is no outlier
+            not_outliers = np.full(len(X), False)
+            
+            # for every distribution let LocalOutlierFactor run
+            for cl in self.classes:
+                cl_idx = y == cl
+                not_outliers[cl_idx] = LocalOutlierFactor().fit_predict(X[cl_idx]) == 1
+            
+            # overwrite X
+            X = X[not_outliers]
+            y = y[not_outliers]
+        
         # fit one SphereNet for each class
         for cl in self.classes:
-            net = SphereNet(in_class=cl, standard_scaling=False, normalization=False, **self.kwargs)
+            net = SphereNet(in_class=cl, standard_scaling=False, normalization=False, remove_training_outliers=False, verbosity=self.verbosity, **self.kwargs)
             net.fit(X, y)
             self.sphere_nets.append(net)
 
