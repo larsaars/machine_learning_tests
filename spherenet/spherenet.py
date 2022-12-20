@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler, Normalizer
 import pickle
 
 # GLOBAL VARS
-metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum', 'mse']
+metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum', 'mse', 'ots']
 pred_modes = ['conservative', 'careful', 'force']
 
 
@@ -132,6 +132,8 @@ class SphereNet:
                     dist[j] = np.sum(np.abs(X_IN[i] - X_OUT[j]))  # sum
                 elif _metric == 14:
                     dist[j] = np.sum((X_IN[i] - X_OUT[j]) ** 2) / X_IN[i].shape[0]  # mse
+                elif _metric == 15:
+                    dist[j] = 1. / np.sum((X_IN[i] - X_OUT[j]) ** 2. + 1e-8)  # ots
 
             # scale and get min from dist array
             radius = min_dist_scaler * np.min(dist)
@@ -177,8 +179,10 @@ class SphereNet:
                     elif _metric == 13:
                         perf[i, j] = np.sum(np.abs(X_IN[i] - X_IN[j])) < radius  # sum
                     elif _metric == 14:
-                        perf[i, j] = np.sum((X_IN[i] - X_IN[j]) ** 2) / X_IN[i].shape[0]  # mse
-                    
+                        perf[i, j] = np.sum((X_IN[i] - X_IN[j]) ** 2) / X_IN[i].shape[0] < radius  # mse
+                    elif _metric == 15:
+                        perf[i, j] = 1. / np.sum((X_IN[i] - X_IN[j]) ** 2. + 1e-8) < radius  # ots
+                 
                     
                 # calculate the sum of correctly classified performances
                 perf_len[i] = perf[i].sum()
@@ -188,6 +192,8 @@ class SphereNet:
                     rows[i] = False
             else:
                 rows[i] = False
+                
+            print(rows[i])
 
         return perf[rows], perf_len[rows], radii[rows], X_IN[rows]  # cut rows; X_IN as centers
   
@@ -448,6 +454,9 @@ class SphereNet:
                     dist = np.sum(np.abs(cl_centers[j] - X[i]))  # sum
                 elif _metric == 14:
                     dist = np.sum((cl_centers[j] - X[i]) ** 2) / X[i].shape[0]  # mse
+                elif _metric == 15:
+                    dist = 1. / np.sum((cl_centers[j] - X[i]) ** 2. + 1e-8)  # ots
+                    
                 
                 
                 if return_distances: 
