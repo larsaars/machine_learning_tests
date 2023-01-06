@@ -76,5 +76,55 @@ def determine_cycles(cycles):
     idx.append(len(cycles))
 
     return idx
+
+@nb.njit(parallel=True)
+def create_cyclic_features(X, cycles, H=3):
+    """
+    parse array with historic data with cycles
+    from X. When new cycle starts the hist values will be zeros
+
+    ex:
+
+    X = np.array([[1], [2], [3], [4], [5], [6], [7]])
+    cycles = np.array([1, 2, 3, 4, 1, 2, 3])
+    N = 2
+
+                                                                        here new cycle
+                                                                               ↓
+    out = [[[1.], [0.]],  [[2.], [1.]],  [[3.], [2.]],  [[4.], [3.]],  [[5.], [0.]],  [[6.], [5.]],  [[7.], [6.]]]
+
+
+    :param X: input data
+    :param cycles: the cycles
+    :param H: number of hist data per feature
+    :return: transformed array
+    """
+
+    # get cycle indexes
+    cycle_idx = np.array(determine_cycles(cycles))
+
+    # out array is the same shape as input but with new
+    # inner dimension with the historic data
+    out = np.zeros((X.shape[0], H, X.shape[1]))
+
+    # paraellel cycle-wise computing
+    for c in range(len(cycle_idx)):
+        begin = 0 if c == 0 else cycle_idx[c - 1]  # included index
+        end = cycle_idx[c]  # excluded index
+
+        # loop through all indexes of cycle
+        for i in nb.prange(begin, end):
+
+            # loop through num of historic data
+            # break when reached end of cycles
+            for h in range(H):
+                last = i - h
+
+                if last < begin:
+                    break
+
+                out[i, h] = X[last]
+
+    return out
   
   
