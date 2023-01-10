@@ -3,11 +3,10 @@
 import numpy as np
 import numba as nb
 
-# VERSION WITHOUT FFTCONVOLVE
 @nb.njit(parallel=True, fastmath=True)
 def symm_filt(X, kernel_size=3, a=0.6, with_init=False):
     """
-    Symmetric linear convolution combined with flatting
+    Symmetric linear convolution combined with flatting (could be also done combined with fft convolution)
 
     :param X: input 1d array
     :param kernel_size: size of the kernel filter
@@ -56,10 +55,41 @@ def symm_filt(X, kernel_size=3, a=0.6, with_init=False):
                 A[r, c] += F[i] * X[r - i, c]
 
     return A if with_init else A[kernel_size - 1:]
+
+@nb.njit(parallel=True)
+def shift_filt(X, shift=0.3):
+    """
+    Shift filtering, assumes filters out too large positive changes (for example reflections)
+    
+    :param X: input data
+    :param shift: the shift tested against
+    """
+    
+    # copy of filtered values
+    A = np.zeros_like(X)
+    
+    # get shape
+    rows, cols = X.shape
+    
+    # init first row
+    A[0] = X[0]
+    
+    # perform filtering (depth first)
+    for c in nb.prange(cols):
+        for r in range(1, rows):
+            A[r, c] = min(X[r, c], X[r - 1, c], A[r - 1, c] + shift)
+    
+    
+    return A
   
- # determine where new cycles start
 @nb.njit
 def determine_cycles(cycles):
+    """
+    determine where new cycles start
+    
+    :param cycles: numpy array of counter
+    :return: the indexes where new cycles end
+    """
     # indexes where cycles end (+1 idx)
     idx = []
 
