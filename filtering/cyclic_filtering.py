@@ -107,6 +107,65 @@ def determine_cycles(cycles):
 
     return idx
 
+@nb.njit
+def apply_symm_filter_in_cycles(X, cycles, kernel_size=3, a=0.9525):
+    """
+    :param X: inputs
+    :param cycles: cycles from df
+    :return: transformed X
+    """
+
+    # get cycle indexes
+    cycle_idx = np.array(determine_cycles(cycles))
+
+    # the shape of X
+    x_rows, x_cols = X.shape
+
+    # out array is smaller because init values are excluded
+    # out = np.zeros((x_rows - len(cycle_idx) * (kernel_size - 1), x_cols))
+    out = np.zeros(X.shape)
+
+    # paraellel cycle-wise computing
+    for i in range(len(cycle_idx)):
+        begin = 0 if i == 0 else cycle_idx[i - 1]  # included start index
+        end = cycle_idx[i]  # excluded end index
+
+        # do symm filtering
+        out[begin:end] = symm_filt(
+            X[begin:end], kernel_size=kernel_size, a=a, with_init=True
+        )
+
+    return out
+
+@nb.njit
+def apply_shift_filter_in_cycles(X, cycles, shift=0.3):
+    """
+    :param X: inputs
+    :param cycles: cycles from df
+    :return: transformed X
+    """
+
+    # get cycle indexes
+    cycle_idx = np.array(determine_cycles(cycles))
+
+    # the shape of X
+    x_rows, x_cols = X.shape
+
+    # out array is smaller because init values are excluded
+    # out = np.zeros((x_rows - len(cycle_idx) * (kernel_size - 1), x_cols))
+    out = np.zeros(X.shape)
+
+    # paraellel cycle-wise computing
+    for i in range(len(cycle_idx)):
+        begin = 0 if i == 0 else cycle_idx[i - 1]  # included start index
+        end = cycle_idx[i]  # excluded end index
+
+        # do symm filtering
+        out[begin:end] = shift_filt(X[begin:end], shift=shift)
+
+    return out
+
+
 @nb.njit(parallel=True)
 def create_cyclic_features(X, cycles, H=3):
     """
@@ -156,5 +215,3 @@ def create_cyclic_features(X, cycles, H=3):
                 out[i, h] = X[last]
 
     return out
-  
-  
