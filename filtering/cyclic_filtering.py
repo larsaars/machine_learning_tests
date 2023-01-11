@@ -7,7 +7,6 @@ import numba as nb
 def symm_filt(X, kernel_size=3, a=0.6, with_init=False):
     """
     Symmetric linear convolution combined with flatting (could be also done combined with fft convolution)
-
     :param X: input 1d array
     :param kernel_size: size of the kernel filter
     :param a: Influence of previous A values (flattening factor)
@@ -91,7 +90,7 @@ def determine_cycles(cycles):
     :return: the indexes where new cycles end
     """
     # indexes where cycles end (+1 idx)
-    idx = []
+    idx = nb.typed.List()
 
     # is old cycle as long as number augments,
     # is new cycle when is not augmenting anymore
@@ -104,8 +103,14 @@ def determine_cycles(cycles):
 
     # append last index (len of cycles)
     idx.append(len(cycles))
+    
+    # convert to np array and return (np.array not working whyever)
+    arr = np.zeros(len(idx), dtype=np.int32)
+    
+    for i in range(len(idx)):
+        arr[i] = idx[i]
 
-    return idx
+    return arr
 
 @nb.njit
 def apply_symm_filter_in_cycles(X, cycles, kernel_size=3, a=0.9525):
@@ -116,8 +121,8 @@ def apply_symm_filter_in_cycles(X, cycles, kernel_size=3, a=0.9525):
     """
 
     # get cycle indexes
-    cycle_idx = np.array(determine_cycles(cycles))
-
+    cycle_idx = determine_cycles(cycles)
+    
     # the shape of X
     x_rows, x_cols = X.shape
 
@@ -129,6 +134,10 @@ def apply_symm_filter_in_cycles(X, cycles, kernel_size=3, a=0.9525):
     for i in range(len(cycle_idx)):
         begin = 0 if i == 0 else cycle_idx[i - 1]  # included start index
         end = cycle_idx[i]  # excluded end index
+        
+        # if is not really a cycle, skip
+        if begin == end:
+            continue
 
         # do symm filtering
         out[begin:end] = symm_filt(
@@ -146,7 +155,7 @@ def apply_shift_filter_in_cycles(X, cycles, shift=0.3):
     """
 
     # get cycle indexes
-    cycle_idx = np.array(determine_cycles(cycles))
+    cycle_idx = determine_cycles(cycles)
 
     # the shape of X
     x_rows, x_cols = X.shape
@@ -159,6 +168,10 @@ def apply_shift_filter_in_cycles(X, cycles, shift=0.3):
     for i in range(len(cycle_idx)):
         begin = 0 if i == 0 else cycle_idx[i - 1]  # included start index
         end = cycle_idx[i]  # excluded end index
+        
+        # if is not really a cycle, skip
+        if begin == end:
+            continue
 
         # do symm filtering
         out[begin:end] = shift_filt(X[begin:end], shift=shift)
@@ -171,18 +184,13 @@ def create_cyclic_features(X, cycles, H=3):
     """
     parse array with historic data with cycles
     from X. When new cycle starts the hist values will be zeros
-
     ex:
-
     X = np.array([[1], [2], [3], [4], [5], [6], [7]])
     cycles = np.array([1, 2, 3, 4, 1, 2, 3])
     N = 2
-
                                                                         here new cycle
                                                                                ↓
     out = [[[1.], [0.]],  [[2.], [1.]],  [[3.], [2.]],  [[4.], [3.]],  [[5.], [0.]],  [[6.], [5.]],  [[7.], [6.]]]
-
-
     :param X: input data
     :param cycles: the cycles
     :param H: number of hist data per feature
@@ -190,7 +198,7 @@ def create_cyclic_features(X, cycles, H=3):
     """
 
     # get cycle indexes
-    cycle_idx = np.array(determine_cycles(cycles))
+    cycle_idx = determine_cycles(cycles)
 
     # out array is the same shape as input but with new
     # inner dimension with the historic data
@@ -200,6 +208,10 @@ def create_cyclic_features(X, cycles, H=3):
     for c in range(len(cycle_idx)):
         begin = 0 if c == 0 else cycle_idx[c - 1]  # included index
         end = cycle_idx[c]  # excluded index
+        
+        # if is not really a cycle, skip
+        if begin == end:
+            continue
 
         # loop through all indexes of cycle
         for i in nb.prange(begin, end):
