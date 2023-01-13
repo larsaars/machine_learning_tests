@@ -789,6 +789,3 @@ class MultiSphereNet:
 
     def __iter__(self):
         return iter(self.sphere_nets)
-    
-    def __getitem__(self, index):
-        return self.sphere_nets[index]
