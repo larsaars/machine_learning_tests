@@ -11,4 +11,4 @@ For tuning it might help, to remove these outliers (to filter). In certain cases
 
 The most important hyperparameter is the distance metric used.
 
-A more detailled description will follow in the future.
+A more detailled description will follow in the future. Have a look at the examples.
