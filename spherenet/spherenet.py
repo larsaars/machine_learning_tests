@@ -509,6 +509,107 @@ class SphereNet:
 
         return y, min_dist_outside, max_dist_inside
     
+    
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _reduce_size(centers, radii, _metric, p):
+        """
+        Reduce the number of spheres used by finding points next to each other
+        and taking their average radius and centers.
+        """ 
+        # define new center and radii lists
+        length = len(centers) 
+        new_centers, new_radii = [], []
+
+        # calculate distances between all sphere centers with provided distance measurement
+        min_idx = np.full(length, -1)
+
+        for i in range(length):
+            min_value = 1e8
+
+            for j in range(length):
+                if i == j:
+                    continue
+
+                v = 1e8
+                # WHY THIS MESSY CODE (UGLY WORKAROUND) AND NOT JUST A METRIC FUNCTION POINTER?
+                # the numba compiler seems to not be able to optimize
+                # good enough when using function pointers
+                # At least I had no success with it.
+                if _metric == 0:
+                    v = np.std(centers[i] - centers[j])  # std
+                elif _metric == 1:
+                    v = np.sum((centers[i] - centers[j]) ** p) ** (1. / p) # minkowski
+                elif _metric == 2:
+                    v = np.sqrt(np.sum((centers[i] - centers[j]) ** 2.))  # euclid
+                elif _metric == 3:
+                    v = np.sum(np.abs(centers[i] - centers[j])) / centers[i].shape[0]  # hamming
+                elif _metric == 4:
+                    v = np.max(np.abs(centers[i] - centers[j]))  # max
+                elif _metric == 5:
+                    v = 1 - np.sum(centers[i] * centers[j]) / (np.sqrt(np.sum(centers[i] ** 2)) * np.sqrt(np.sum(centers[j] ** 2)) + 1e-8)  # cosine
+                elif _metric == 6:
+                    v = 1 - np.sum(np.minimum(centers[i], centers[j])) / (np.sum(np.maximum(centers[i], centers[j])) + 1e-8)  # jaccard
+                elif _metric == 7:
+                    v = 1 - 2 * np.sum(np.minimum(centers[i], centers[j])) / (np.sum(centers[i]) + np.sum(centers[j]) + 1e-8)  # dice
+                elif _metric == 8: 
+                    v = np.sum(np.abs(centers[i] - centers[j]) / (np.abs(centers[i]) + np.abs(centers[j]) + 1e-8))  # canberra
+                elif _metric == 9:
+                    v = np.sum(np.abs(centers[i] - centers[j])) / (np.sum(np.abs(centers[i] + centers[j])) + 1e-8)  # braycurtis
+                elif _metric == 10:
+                    v = 1 - np.corrcoef(centers[i], centers[j])[0, 1]  # correlation
+                elif _metric == 11:
+                    v = np.sum(centers[i] * centers[j]) / (np.sum(np.abs(centers[i] - centers[j])) + 1e-8)  # yule
+                elif _metric == 12:
+                    v = np.arccos(np.sum(centers[i] * centers[j]) / (np.sqrt(np.sum(centers[i] ** 2)) * np.sqrt(np.sum(centers[j] ** 2)) + 1e-8)) / np.pi  # havensine
+                elif _metric == 13:
+                    v = np.sum(np.abs(centers[i] - centers[j]))  # sum
+                elif _metric == 14:
+                    v = np.sum((centers[i] - centers[j]) ** 2) / centers[i].shape[0]  # mse
+                elif _metric == 15:
+                    v = 1. / np.sum((centers[i] - centers[j]) ** 2. + 1e-8)  # ots
+
+                # compare to previous value
+                if v < min_value:
+                    min_value = v
+                    min_idx[i] = j
+
+        # append average center and radius
+        # if they both marked themselves as their nearest neighbors
+        for i, j in enumerate(min_idx):
+            if i == min_idx[j] and i < j:
+                new_centers.append((centers[i] + centers[j]) / 2.)
+                new_radii.append((radii[i] + radii[j]) / 2.)
+
+        # return new centers and radii
+        return new_centers, new_radii
+    
+    
+
+    def reduce_size(self, repetitions=1):
+        """
+        Reduce the number of spheres used by finding points next to each other
+        and taking their average radius and centers.
+
+        :param repetitions: how often to repeat the algorithm
+        :return: self
+        """
+
+        for _ in range(repetitions):
+            # perform algorithm
+            new_centers, new_radii = self._reduce_size(self.cl_centers, self.cl_radii, self._metric, self.p)
+
+            # convert reflective list to np array
+            self.cl_centers = np.array(new_centers)
+            self.cl_radii = np.array(new_radii)
+        
+        
+        
+        if self.verbosity > 0:
+            print(f'New size: {len(self.cl_centers)}')
+            
+        return self
+    
    
     def predict(self, X, return_distances=False):
         """
@@ -741,13 +842,27 @@ class MultiSphereNet:
             idx_class_keys, idx_class_values = list(idx_class.keys()), list(idx_class.values()) 
             sort_idx = np.argsort(idx_class_keys)
             idx = np.searchsorted(idx_class_keys, classification, sorter=sort_idx)
-            return np.asarray(idx_class_values)[sort_idx][idx] 
-            
+            return np.asarray(idx_class_values)[sort_idx][idx]
+        
+        
+    def reduce_size(self, repetitions=1):
+        """
+        Reduce number of spheres in nets, look at single SphereNet.
+        
+        :param repetitions: repetitions of algorithm
+        :return: self
+        """
+        
+        for net in self.sphere_nets:
+            net.reduce_size(repetitions=repetitions)
+        
+        return self
             
 
     def score(self, X, y):
         """
         Score the model
+        
         :param X: The input data
         :param y: The target data
         :return: The accuracy
@@ -760,6 +875,7 @@ class MultiSphereNet:
     def dump(self, file):
         """
         dump classifier as file
+        
         :param file: file to dump to
         """
         with open(file, "wb", protocol=4) as f:
@@ -768,6 +884,7 @@ class MultiSphereNet:
     def load(self, file):
         """
         load classifier from file
+        
         :param file: file to load from
         """
         with open(file, "rb") as f:
