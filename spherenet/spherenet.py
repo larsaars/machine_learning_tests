@@ -512,7 +512,7 @@ class SphereNet:
     
     @staticmethod
     @nb.njit(fastmath=True)
-    def _reduce_size(centers, radii, _metric, p):
+    def _reduce_size(centers, radii, _metric, p, lose_rest):
         """
         Reduce the number of spheres used by finding points next to each other
         and taking their average radius and centers.
@@ -520,6 +520,9 @@ class SphereNet:
         # define new center and radii lists
         length = len(centers) 
         new_centers, new_radii = [], []
+        
+        # keep track of which indexes have been used to create new spheres and which not
+        used_idx = np.full(length, False)
 
         # calculate distances between all sphere centers with provided distance measurement
         min_idx = np.full(length, -1)
@@ -578,26 +581,39 @@ class SphereNet:
         # if they both marked themselves as their nearest neighbors
         for i, j in enumerate(min_idx):
             if i == min_idx[j] and i < j:
+                # generate new sphere and add to list
                 new_centers.append((centers[i] + centers[j]) / 2.)
                 new_radii.append((radii[i] + radii[j]) / 2.)
+                # mark indexes as used
+                used_idx[i] = True
+                used_idx[j] = True
+        
+        # if lose rest is False, add the unused indexes to list
+        if not lose_rest:
+            # add old unused indexes to new_list
+            for i in range(length):
+                if not used_idx[i]:
+                    new_centers.append(centers[i])
+                    new_radii.append(radii[i])
 
         # return new centers and radii
         return new_centers, new_radii
     
     
 
-    def reduce_size(self, repetitions=1):
+    def reduce_size(self, lose_rest=False, repetitions=1):
         """
         Reduce the number of spheres used by finding points next to each other
         and taking their average radius and centers.
 
         :param repetitions: how often to repeat the algorithm
+        :param lose_rest: if should keep only newly generated spheres and lose the for generating unused ones
         :return: self
         """
 
         for _ in range(repetitions):
             # perform algorithm
-            new_centers, new_radii = self._reduce_size(self.cl_centers, self.cl_radii, self._metric, self.p)
+            new_centers, new_radii = self._reduce_size(self.cl_centers, self.cl_radii, self._metric, self.p, lose_rest)
 
             # convert reflective list to np array
             self.cl_centers = np.array(new_centers)
@@ -785,6 +801,7 @@ class MultiSphereNet:
         :param X: The input
         :return: The predicted class (array), -1 if no class was found
         """
+        
         # transform X as defined
         if self.standard_scaling:
             X = self.standard_scaler.transform(X)
@@ -811,7 +828,10 @@ class MultiSphereNet:
             min_outsides = np.zeros((len(self.sphere_nets), length))
             
             # for later replacing indices, create dict with indices and real class numbers
-            idx_class = dict()
+            # contain -1 = -1 as class for not classified classes in careful mode
+            idx_class = {
+                -1: -1
+            }
             
             # make predictions
             for i, net in enumerate(self.sphere_nets):
@@ -845,16 +865,17 @@ class MultiSphereNet:
             return np.asarray(idx_class_values)[sort_idx][idx]
         
         
-    def reduce_size(self, repetitions=1):
+    def reduce_size(self, lose_rest=False, repetitions=1):
         """
         Reduce number of spheres in nets, look at single SphereNet.
         
         :param repetitions: repetitions of algorithm
+        :param lose_rest: see SphereNet
         :return: self
         """
         
         for net in self.sphere_nets:
-            net.reduce_size(repetitions=repetitions)
+            net.reduce_size(lose_rest=lose_rest, repetitions=repetitions)
         
         return self
             
