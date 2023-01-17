@@ -926,8 +926,8 @@ class MultiSphereNet:
         for clf in self.sphere_nets:
             out += f"\nNumber of spheres for class {clf.in_class} KeyNet: {len(clf.cl_radii)}"
         
-        out += f"""
-        metric={fc.metric} ({fc._metric})
+        out += "\n"
+        out += f"""metric={fc.metric} ({fc._metric})
         pred_mode={self.pred_mode} ({self._pred_mode})
         min_dist_scaler={fc.min_dist_scaler}
         min_radius_threshold={fc.min_radius_threshold}
@@ -940,8 +940,7 @@ class MultiSphereNet:
         standard_scaling={self.standard_scaling}
         normalization={self.normalization}
         remove_training_outliers={self.remove_training_outliers}
-        verbosity={fc.verbosity}
-        """
+        verbosity={fc.verbosity}"""
         
         return out
     
