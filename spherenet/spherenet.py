@@ -918,7 +918,7 @@ class MultiSphereNet:
         :return: self description string
         """
         
-        out = self.__repr__(self) + "\n"
+        out = self.__repr__() + "\n"
         
         # first classifier to read arguments
         fc = self.sphere_nets[0]
