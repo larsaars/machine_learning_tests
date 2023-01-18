@@ -6,6 +6,7 @@ import numba as nb
 from sklearn.preprocessing import StandardScaler, Normalizer
 from sklearn.neighbors import LocalOutlierFactor
 import pickle
+from textwrap import dedent
 
 # GLOBAL VARS
 metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum', 'mse', 'ots']
@@ -927,7 +928,7 @@ class MultiSphereNet:
             out += f"\nNumber of spheres for class {clf.in_class} KeyNet: {len(clf.cl_radii)}"
         
         out += "\n"
-        out += f"""metric={fc.metric} ({fc._metric})
+        out += dedent(f"""metric={fc.metric} ({fc._metric})
         pred_mode={self.pred_mode} ({self._pred_mode})
         min_dist_scaler={fc.min_dist_scaler}
         min_radius_threshold={fc.min_radius_threshold}
@@ -940,7 +941,7 @@ class MultiSphereNet:
         standard_scaling={self.standard_scaling}
         normalization={self.normalization}
         remove_training_outliers={self.remove_training_outliers}
-        verbosity={fc.verbosity}"""
+        verbosity={fc.verbosity}""")
         
         return out
     
