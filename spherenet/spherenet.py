@@ -6,6 +6,7 @@ import numba as nb
 from sklearn.preprocessing import StandardScaler, Normalizer
 from sklearn.neighbors import LocalOutlierFactor
 import pickle
+from textwrap import dedent
 
 # GLOBAL VARS
 metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum', 'mse', 'ots']
@@ -912,6 +913,37 @@ class MultiSphereNet:
             self = pickle.load(f)
 
         return self
+    
+     def describe(self):
+        """
+        :return: self description string
+        """
+        
+        out = self.__repr__() + "\n"
+        
+        # first classifier to read arguments
+        fc = self.sphere_nets[0]
+        
+        for clf in self.sphere_nets:
+            out += f"\nNumber of spheres for class {clf.in_class} KeyNet: {len(clf.cl_radii)}"
+        
+        out += "\n"
+        out += dedent(f"""metric={fc.metric} ({fc._metric})
+        pred_mode={self.pred_mode} ({self._pred_mode})
+        min_dist_scaler={fc.min_dist_scaler}
+        min_radius_threshold={fc.min_radius_threshold}
+        optimization_tolerance={fc.optimization_tolerance}
+        optimization_repetitions={fc.optimization_repetitions}
+        optimization_parallel={fc.optimization_parallel}
+        min_num_classified={fc.min_num_classified}
+        max_spheres_used={fc.max_spheres_used}
+        p={fc.p}
+        standard_scaling={self.standard_scaling}
+        normalization={self.normalization}
+        remove_training_outliers={self.remove_training_outliers}
+        verbosity={fc.verbosity}""")
+        
+        return out
     
     def __repr__(self):
         return f"MultiSphereNet with {len(self.sphere_nets)} SphereNets"
