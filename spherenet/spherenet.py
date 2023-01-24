@@ -20,7 +20,7 @@ class SphereNet:
     """
 
     
-    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, optimization_repetitions=1, optimization_parallel=False, min_num_classified=2, max_spheres_used=-1, metric='euclid', p=2, standard_scaling=False, normalization=False, remove_training_outliers=True, verbosity=0):
+    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=-1, optimization_tolerance=0, optimization_repetitions=1, optimization_parallel=False, min_num_classified=2, max_spheres_used=-1, metric='euclid', p=2, standard_scaling=False, normalization=False, remove_training_outliers=False, verbosity=0):
         """
         Initialize the SphereNet model
         
@@ -133,7 +133,7 @@ class SphereNet:
                 elif _metric == 12:
                     dist[j] = np.arccos(np.sum(X_IN[i] * X_OUT[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_OUT[j] ** 2)) + 1e-8)) / np.pi  # havensine
                 elif _metric == 13:
-                    dist[j] = np.sum(np.abs(X_IN[i] - X_OUT[j]))  # sum
+                    dist[j] = np.sum(X_IN[i] - X_OUT[j])  # sum
                 elif _metric == 14:
                     dist[j] = np.sum((X_IN[i] - X_OUT[j]) ** 2) / X_IN[i].shape[0]  # mse
                 elif _metric == 15:
@@ -181,7 +181,7 @@ class SphereNet:
                     elif _metric == 12:
                         perf[i, j] = np.arccos(np.sum(X_IN[i] * X_IN[j]) / (np.sqrt(np.sum(X_IN[i] ** 2)) * np.sqrt(np.sum(X_IN[j] ** 2)) + 1e-8)) / np.pi < radius  # havensine
                     elif _metric == 13:
-                        perf[i, j] = np.sum(np.abs(X_IN[i] - X_IN[j])) < radius  # sum
+                        perf[i, j] = np.sum(X_IN[i] - X_IN[j]) < radius  # sum
                     elif _metric == 14:
                         perf[i, j] = np.sum((X_IN[i] - X_IN[j]) ** 2) / X_IN[i].shape[0] < radius  # mse
                     elif _metric == 15:
@@ -475,7 +475,7 @@ class SphereNet:
                 elif _metric == 12:
                     dist = np.arccos(np.sum(cl_centers[j] * X[i]) / (np.sqrt(np.sum(cl_centers[j] ** 2)) * np.sqrt(np.sum(X[i] ** 2)) + 1e-8)) / np.pi  # havensine
                 elif _metric == 13:
-                    dist = np.sum(np.abs(cl_centers[j] - X[i]))  # sum
+                    dist = np.sum(cl_centers[j] - X[i])  # sum
                 elif _metric == 14:
                     dist = np.sum((cl_centers[j] - X[i]) ** 2) / X[i].shape[0]  # mse
                 elif _metric == 15:
@@ -567,7 +567,7 @@ class SphereNet:
                 elif _metric == 12:
                     v = np.arccos(np.sum(centers[i] * centers[j]) / (np.sqrt(np.sum(centers[i] ** 2)) * np.sqrt(np.sum(centers[j] ** 2)) + 1e-8)) / np.pi  # havensine
                 elif _metric == 13:
-                    v = np.sum(np.abs(centers[i] - centers[j]))  # sum
+                    v = np.sum(centers[i] - centers[j])  # sum
                 elif _metric == 14:
                     v = np.sum((centers[i] - centers[j]) ** 2) / centers[i].shape[0]  # mse
                 elif _metric == 15:
