@@ -1,0 +1,4 @@
+numpy
+scikit-learn
+numba
+numba_progress
