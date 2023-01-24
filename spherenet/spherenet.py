@@ -20,7 +20,7 @@ class SphereNet:
     """
 
     
-    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0.01, optimization_tolerance=0, optimization_repetitions=1, optimization_parallel=False, min_num_classified=2, max_spheres_used=-1, metric='euclid', p=2, standard_scaling=False, normalization=False, remove_training_outliers=True, verbosity=0):
+    def __init__(self, in_class=1, min_dist_scaler=1.0, min_radius_threshold=0, optimization_tolerance=0, optimization_repetitions=1, optimization_parallel=False, min_num_classified=2, max_spheres_used=-1, metric='euclid', p=2, standard_scaling=False, normalization=False, remove_training_outliers=True, verbosity=0):
         """
         Initialize the SphereNet model
         
