@@ -202,7 +202,7 @@ class SphereNet:
   
 
     
-    @staticmethod 
+    @staticmethod
     def _remove_ambiguity(perf, perf_len, radii, centers, progress, optimization_tolerance):
         """
         Remove ambiguity / optimize the spheres by removing overlapping sphere results.
@@ -213,45 +213,42 @@ class SphereNet:
         :param progress: the progress bar
         :return: optimized performances, radii and centers that can be used for classification
         """
-  
-        # sort performances, radii and centers in the same manner
+
+        # sort performances
         # as needed by algorithm
         # sort:
         # small to large (stl)
         # and
         # large to small (lts)
-        idx_stl = perf_len.argsort()
-        idx_lts = idx_stl[::-1]
-        perf_len_stl = perf_len[idx_stl]
-        perf_len_lts = perf_len[idx_lts]
-        perf_lts = perf[idx_lts]
-        perf_stl = perf[idx_stl]
-        radii_lts = radii[idx_lts]
-        centers_lts = centers[idx_lts]
+        indexes_stl = perf_len.argsort()
+        indexes_lts = indexes_stl[::-1]
+
+        perf_len_stl = perf_len[indexes_stl]
+        perf_lts = perf[indexes_lts]
+        perf_stl = perf[indexes_stl]
 
         rows_len, cols_len = perf_stl.shape
         # rows is sorted by lts, true means is disabled, false means enabled
         rows = np.full(
             rows_len, False, dtype=np.bool_
-        )  
+        )
 
         # outer loop:
         # loop rows in stl sorted list
         # because we want to keep spheres classifying worse to be rather thrown out
         # than spheres better
-        for stl_idx in nb.prange(rows_len):
+        for current_row_stl_idx in nb.prange(rows_len):
             # update progress
             if progress is not None:
                 progress.update(1)
 
             # get this rows lts index
-            this_lts_idx = rows_len - 1 - stl_idx
+            current_row_lts_idx = rows_len - 1 - current_row_stl_idx
             # disable this row for comparison in loop
-            rows[this_lts_idx] = True
+            rows[current_row_lts_idx] = True
 
             # reset trues count and row_disabled bool etc.
-            trues_found, trues_should = 0, 0
-            tolerance_left = optimization_tolerance
+            trues_found = optimization_tolerance
             row_disabled = False
 
             # do a depth first search:
@@ -259,65 +256,49 @@ class SphereNet:
             # then (nested) through rows
             # much less columns are activated than rows
             for col_idx in range(cols_len):
-                # check if row is disabled already (everything needed has been found)
-                # because then this loop can be directly broken
-                if row_disabled:
+                # if the amount of trues needed for knowing
+                # that the sphere is amiguous has been found
+                # set the row as disabled
+                # and break the column (one up) loop as well 
+                if trues_found >= perf_len_stl[current_row_stl_idx]:
+                    row_disabled = True
                     break
 
                 # only do a check if column has been
-                # even classified correcly by current sphere (row)
-                if perf_stl[stl_idx][col_idx]:
-                    # this is activated, trues should is +1 because this one should be found
-                    trues_should += 1
-
+                # even classified correcly by current classifier sphere (row)
+                if perf_stl[current_row_stl_idx][col_idx]:
                     # continue with lts sorted loop
                     # it is more likely to find a True value
                     # if the rows with most true values are on top
-                    for lts_idx in range(rows_len):
+                    for inner_row_lts_idx in range(rows_len):
                         # skip row if is deactivated already
-                        if rows[lts_idx]:
+                        if rows[inner_row_lts_idx]:
                             continue
 
                         # else if finds a True value in this column
                         # break the loop and mark one more true as found
-                        if perf_lts[lts_idx][col_idx]:
+                        if perf_lts[inner_row_lts_idx][col_idx]:
                             trues_found += 1
-
-                            # if the amount of trues needed for knowing
-                            # that the sphere is amiguous has been found
-                            # we can also break the outer loop
-                            # and set the row as disabled
-                            if perf_len_stl[stl_idx] == trues_found:
-                                row_disabled = True
 
                             # anyways, the row (depth) loop can be stopped
                             break
 
 
-                    # if is not found,
-                    # use tolerance to have a bool found (easier removal)
-                    # but if tolerance is used up, sphere has to be disabled
-                    if trues_found != trues_should:
-                        tolerance_left -= 1
-
-                        # no tolerance anymore, diable row and break loop
-                        if tolerance_left == -1:
-                            break
-
-                        trues_found += 1
-
 
             # set enabled,
             # if no amiguousity has been found
             # set disabled, if has been found
-            rows[this_lts_idx] = row_disabled
+            rows[current_row_lts_idx] = row_disabled
 
 
         # reverse rows for indexing
         rows = ~rows
 
+        # get indexes for unsorted arrays for returning activated elements
+        unsorted_active_indexes = indexes_lts[rows]
+
         # return perfomances, centers and radii used for classification
-        return perf_lts[rows], perf_len_lts[rows], centers_lts[rows], radii_lts[rows]
+        return perf_lts[rows], perf_len[unsorted_active_indexes], centers[unsorted_active_indexes], radii[unsorted_active_indexes]
  
     
     def fit(self, X, y):
