@@ -491,43 +491,6 @@ class SphereNet:
                         break
 
         return y, min_dist_outside, max_dist_inside
-    
-    
-    @staticmethod
-    @nb.njit(parallel=True)
-    def _scale_adaptively(perf_len, radii, t, a_perc):
-        """
-        scale radii adaptively
-        
-        :return: rescaled radii 
-        """
-        
-        # calculate the pitch of the scaler
-        # for that the crossing point a is needed,
-        # use not the maximum of classified points
-        # (leave the size of the 10% biggest speheres)
-        a = perf_len[int(len(perf_len) * a_perc - 1)]
-        m = (1 - t) / (a + 1e8)
-
-        # scale by number of classified with linear function 
-        # the less classified the smaller the scaler
-        for i in nb.prange(len(perf_len)):
-            radii[i] *= min(1, m * perf_len[i] + t)
-        
-        return radii
-    
-    def scale_adaptively(self, t, a_perc=0.9):
-        """
-        scale radii adaptively
-        
-        :param t: Minimum scaler value, influences stepth of scaling values
-        :param a_perc: from which point on shall be scaled (a_perc=0.9 means the last 10% won't be scaled)
-        :return: self
-        """
-        
-        self._scale_adaptively(self._perf_len, self.cl_radii, t, a_perc)
-        
-        return self
         
     
     @staticmethod
@@ -883,21 +846,6 @@ class MultiSphereNet:
             sort_idx = np.argsort(idx_class_keys)
             idx = np.searchsorted(idx_class_keys, classification, sorter=sort_idx)
             return np.asarray(idx_class_values)[sort_idx][idx]
-    
-    
-    def scale_adaptively(self, t, a_perc=0.9):
-        """
-        scale radii adaptively
-        
-        :param t: Minimum scaler value, influences stepth of scaling values
-        :param a_perc: from which point on shall be scaled (a_perc=0.9 means the last 10% won't be scaled)
-        :return: self
-        """
-        
-        for clf in self.sphere_nets:
-            clf.scale_adaptively(t, a_perc=a_perc)
-           
-        return self
         
         
     def reduce_size(self, lose_rest=False, repetitions=1):
