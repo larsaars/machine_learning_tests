@@ -6,7 +6,6 @@ import numba as nb
 from sklearn.preprocessing import StandardScaler, Normalizer
 from sklearn.neighbors import LocalOutlierFactor
 import pickle
-from textwrap import dedent
 
 # GLOBAL VARS
 metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum', 'mse', 'ots']
@@ -57,7 +56,8 @@ class SphereNet:
         self.p = p
         # set metric index
         self._metric = metrics_available.index(metric)
- 
+         
+         
         # init scaler(s), if classes passed, set those as scalers
         if standard_scaling:
             if isinstance(standard_scaling, StandardScaler):
@@ -83,12 +83,13 @@ class SphereNet:
         :return: the performance, performance length, radii and centers for point packages
         """
                 
-        length_in, length_out = X_IN.shape[0], X_OUT.shape[0]
+        
+        length_in, length_out = X_IN.shape[0], X_OUT.shape[0] 
         # create arrays to be returned
         perf = np.full((length_in, length_in), False)
         radii = np.zeros(length_in, dtype=np.float64)
         perf_len = np.zeros(length_in)
-
+        
         # rows to be used (not filtered by threshold)
         rows = np.full(length_in, True, dtype=np.bool_)
         for i in nb.prange(length_in):
@@ -190,7 +191,7 @@ class SphereNet:
                     
                 # calculate the sum of correctly classified performances
                 perf_len[i] = perf[i].sum()
-                
+                 
                 # if this sum is smaller than a given value, set this row to false
                 if perf_len[i] < min_num_classified:
                     rows[i] = False
@@ -199,8 +200,8 @@ class SphereNet:
                 
 
         return perf[rows], perf_len[rows], radii[rows], X_IN[rows]  # cut rows; X_IN as centers
-  
-
+    
+     
     
     @staticmethod
     def _remove_ambiguity(perf, perf_len, radii, centers, progress, optimization_tolerance):
@@ -491,6 +492,40 @@ class SphereNet:
 
         return y, min_dist_outside, max_dist_inside
     
+    
+    @staticmethod
+    @nb.njit(parallel=True)
+    def _scale_adaptively(perf_len, radii, t, a_perc):
+        """
+        scale radii adaptively
+        
+        :return: rescaled radii 
+        """
+        
+        # calculate the pitch of the scaler
+        # for that the crossing point a is needed,
+        # use not the maximum of classified points
+        # (leave the size of the 10% biggest speheres)
+        a = perf_len[int(len(perf_len) * a_perc - 1)]
+        m = (1 - t) / (a + 1e8)
+
+        # scale by number of classified with linear function 
+        # the less classified the smaller the scaler
+        for i in nb.prange(len(perf_len)):
+            radii[i] *= min(1, m * perf_len[i] + t)
+        
+        return radii
+    
+    def scale_adaptively(self, t, a_perc=0.9):
+        """
+        scale radii adaptively
+        
+        :param t: Minimum scaler value, influences stepth of scaling values
+        :param a_perc: from which point on shall be scaled (a_perc=0.9 means the last 10% won't be scaled)
+        """
+        
+        self._scale_adaptively(self._perf_len, self.cl_radii, t, a_perc)
+        
     
     @staticmethod
     @nb.njit(fastmath=True)
@@ -845,6 +880,18 @@ class MultiSphereNet:
             sort_idx = np.argsort(idx_class_keys)
             idx = np.searchsorted(idx_class_keys, classification, sorter=sort_idx)
             return np.asarray(idx_class_values)[sort_idx][idx]
+    
+    
+    def scale_adaptively(self, t, a_perc=0.9):
+        """
+        scale radii adaptively
+        
+        :param t: Minimum scaler value, influences stepth of scaling values
+        :param a_perc: from which point on shall be scaled (a_perc=0.9 means the last 10% won't be scaled)
+        """
+        
+        for clf in self.sphere_nets:
+            clf.scale_adaptively(t, a_perc=a_perc)
         
         
     def reduce_size(self, lose_rest=False, repetitions=1):
@@ -895,7 +942,7 @@ class MultiSphereNet:
 
         return self
     
-     def describe(self):
+    def describe(self):
         """
         :return: self description string
         """
@@ -906,25 +953,26 @@ class MultiSphereNet:
         fc = self.sphere_nets[0]
         
         for clf in self.sphere_nets:
-            out += f"\nNumber of spheres for class {clf.in_class} KeyNet: {len(clf.cl_radii)}"
+            out += f"\nNumber of spheres for class {clf.in_class} SphereNet: {len(clf.cl_radii)}"
         
         out += "\n"
-        out += dedent(f"""metric={fc.metric} ({fc._metric})
-        pred_mode={self.pred_mode} ({self._pred_mode})
-        min_dist_scaler={fc.min_dist_scaler}
-        min_radius_threshold={fc.min_radius_threshold}
-        optimization_tolerance={fc.optimization_tolerance}
-        optimization_repetitions={fc.optimization_repetitions}
-        optimization_parallel={fc.optimization_parallel}
-        min_num_classified={fc.min_num_classified}
-        max_spheres_used={fc.max_spheres_used}
-        p={fc.p}
-        standard_scaling={self.standard_scaling}
-        normalization={self.normalization}
-        remove_training_outliers={self.remove_training_outliers}
-        verbosity={fc.verbosity}""")
+        out += f"""metric={fc.metric} ({fc._metric})
+pred_mode={self.pred_mode} ({self._pred_mode})
+min_dist_scaler={fc.min_dist_scaler}
+min_radius_threshold={fc.min_radius_threshold}
+optimization_tolerance={fc.optimization_tolerance}
+optimization_repetitions={fc.optimization_repetitions}
+optimization_parallel={fc.optimization_parallel}
+min_num_classified={fc.min_num_classified}
+max_spheres_used={fc.max_spheres_used}
+p={fc.p}
+standard_scaling={self.standard_scaling}
+normalization={self.normalization}
+remove_training_outliers={self.remove_training_outliers}
+verbosity={fc.verbosity}"""
         
         return out
+        
     
     def __repr__(self):
         return f"MultiSphereNet with {len(self.sphere_nets)} SphereNets"
