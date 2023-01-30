@@ -522,9 +522,12 @@ class SphereNet:
         
         :param t: Minimum scaler value, influences stepth of scaling values
         :param a_perc: from which point on shall be scaled (a_perc=0.9 means the last 10% won't be scaled)
+        :return: self
         """
         
         self._scale_adaptively(self._perf_len, self.cl_radii, t, a_perc)
+        
+        return self
         
     
     @staticmethod
@@ -888,10 +891,13 @@ class MultiSphereNet:
         
         :param t: Minimum scaler value, influences stepth of scaling values
         :param a_perc: from which point on shall be scaled (a_perc=0.9 means the last 10% won't be scaled)
+        :return: self
         """
         
         for clf in self.sphere_nets:
             clf.scale_adaptively(t, a_perc=a_perc)
+           
+        return self
         
         
     def reduce_size(self, lose_rest=False, repetitions=1):
