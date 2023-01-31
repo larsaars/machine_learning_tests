@@ -112,9 +112,13 @@ with most true-values, since they are more probable to contain the column's resp
 once a row is deactivated (optimized out / removed) by the algorithm, it will not be searched anymore by the
 algorithm. This is another reason why the best classifying spheres are being tried to remove last.
 
+![](optimization_algo.png)
+
 The parameter  _optimization_tolerance _ defines the number of spheres that is already assumed to be found for each
 row before searching for other true-values in the matrix. This way, the higher  _optimization_tolerance _ is set, the more
 spheres will be removed. This can prevent overfitting, too large / complex models but also decrease accuracy.
+
+![](optimization_algo_tolerance.png)
 
 #### Testing
 
@@ -170,6 +174,8 @@ of the respective classifying sphere. This means the class of the sphere the poi
 - MultiSphereNet with  pred_mode 'force' is normally larger, but in almost all cases better than using only one SphereNet.
 
 ## Visual Comparison of MultiSphereNet and SphereNet on an Example
+
+![](merged_keynet_comparison.png)
 
 These are randomly generated data points belonging two different clusters: Class 0 (red) and class 1 (blue). The left
 picture displays, which spheres the normal SphereNet implementation (with  _metric_ ='euclid' and  _min_num_classified_ =
