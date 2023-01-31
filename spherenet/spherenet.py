@@ -8,7 +8,7 @@ from sklearn.neighbors import LocalOutlierFactor
 import pickle
 
 # GLOBAL VARS
-metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'havensine', 'sum', 'mse', 'ots']
+metrics_available = ['std', 'minkowski', 'euclid', 'hamming', 'max', 'cosine', 'jaccard', 'dice', 'canberra', 'braycurtis', 'correlation', 'yule', 'haversine', 'sum', 'mse', 'ots']
 pred_modes = ['conservative', 'careful', 'force']
 
 
